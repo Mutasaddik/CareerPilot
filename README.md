@@ -1,6 +1,6 @@
 # CareerPilot 🚀
 
-Your 24/7 AI-powered career intelligence platform — built for the Bangladesh job market.
+24/7 AI-powered career intelligence platform — built for the Bangladesh job market.
 
 ## Quick Start
 
