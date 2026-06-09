@@ -1,0 +1,49 @@
+{
+  "name": "careerpilot-backend",
+  "version": "1.0.0",
+  "description": "CareerPilot Backend API",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "seed:superadmin": "node src/scripts/seedSuperAdmin.js",
+    "db:migrate": "node src/scripts/migrate.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@google/generative-ai": "^0.15.0",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.8.0",
+    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.3.1",
+    "express-validator": "^7.1.0",
+    "google-auth-library": "^9.11.0",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "mjml": "^4.15.3",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.14",
+    "passport": "^0.7.0",
+    "passport-github2": "^0.1.12",
+    "passport-google-oauth20": "^2.0.0",
+    "passport-linkedin-oauth2": "^2.0.0",
+    "pg": "^8.12.0",
+    "playwright": "^1.45.0",
+    "socket.io": "^4.7.5",
+    "uuid": "^10.0.0",
+    "web-push": "^3.6.7",
+    "winston": "^3.13.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

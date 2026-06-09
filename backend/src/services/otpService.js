@@ -1,0 +1,96 @@
+import bcrypt from 'bcryptjs';
+import { query } from '../models/db.js';
+import logger from './loggerService.js';
+
+const OTP_EXPIRY_MINUTES = 2;
+const MAX_RESEND_ATTEMPTS = 3;
+const RESEND_COOLDOWN_SECONDS = 60;
+
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+export const createOTP = async (email, purpose, userId = null) => {
+  const otp = generateOTP();
+  const otpHash = await bcrypt.hash(otp, 10);
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  await query(
+    `UPDATE otp_codes SET is_used = TRUE WHERE email = $1 AND purpose = $2 AND is_used = FALSE`,
+    [email, purpose]
+  );
+
+  await query(
+    `INSERT INTO otp_codes (user_id, email, otp_hash, purpose, expires_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [userId, email, otpHash, purpose, expiresAt]
+  );
+
+  logger.info('OTP created', { email, purpose });
+  return otp;
+};
+
+export const verifyOTP = async (email, otp, purpose) => {
+  const result = await query(
+    `SELECT id, otp_hash, expires_at, is_used
+     FROM otp_codes
+     WHERE email = $1 AND purpose = $2 AND is_used = FALSE
+     ORDER BY created_at DESC LIMIT 1`,
+    [email, purpose]
+  );
+
+  const record = result.rows[0];
+
+  if (!record) {
+    return { valid: false, reason: 'No OTP found. Please request a new one.' };
+  }
+
+  if (new Date() > new Date(record.expires_at)) {
+    return { valid: false, reason: 'OTP has expired. Please request a new one.' };
+  }
+
+  const isMatch = await bcrypt.compare(otp, record.otp_hash);
+  if (!isMatch) {
+    return { valid: false, reason: 'Invalid OTP. Please check and try again.' };
+  }
+
+  await query('UPDATE otp_codes SET is_used = TRUE WHERE id = $1', [record.id]);
+
+  return { valid: true };
+};
+
+export const resendOTP = async (email, purpose, userId = null) => {
+  const result = await query(
+    `SELECT id, resend_count, last_resend_at
+     FROM otp_codes
+     WHERE email = $1 AND purpose = $2
+     ORDER BY created_at DESC LIMIT 1`,
+    [email, purpose]
+  );
+
+  const record = result.rows[0];
+
+  if (record) {
+    if (record.resend_count >= MAX_RESEND_ATTEMPTS) {
+      return { allowed: false, reason: 'Maximum resend attempts reached. Please try again later.' };
+    }
+
+    if (record.last_resend_at) {
+      const secondsSinceLastResend = (Date.now() - new Date(record.last_resend_at).getTime()) / 1000;
+      if (secondsSinceLastResend < RESEND_COOLDOWN_SECONDS) {
+        const waitSeconds = Math.ceil(RESEND_COOLDOWN_SECONDS - secondsSinceLastResend);
+        return { allowed: false, reason: `Please wait ${waitSeconds} seconds before resending.` };
+      }
+    }
+  }
+
+  const otp = await createOTP(email, purpose, userId);
+
+  await query(
+    `UPDATE otp_codes SET resend_count = resend_count + 1, last_resend_at = NOW()
+     WHERE email = $1 AND purpose = $2 AND is_used = FALSE`,
+    [email, purpose]
+  );
+
+  return { allowed: true, otp };
+};

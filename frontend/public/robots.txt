@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Allow: /register
+Allow: /login
+Allow: /privacy
+Allow: /terms
+
+Disallow: /admin/
+Disallow: /superadmin/
+Disallow: /moderator/
+Disallow: /dashboard/
+Disallow: /api/
+
+Sitemap: https://careerpilot.app/sitemap.xml
