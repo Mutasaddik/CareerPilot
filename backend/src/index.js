@@ -14,6 +14,9 @@ import { generalLimiter } from './middleware/rateLimiter.js';
 import healthRouter      from './routes/health.js';
 import maintenanceRouter from './routes/maintenance.js';
 import authRouter        from './routes/auth.js';
+import adminRouter       from './routes/admin.js';
+import superAdminRouter  from './routes/superadmin.js';
+import moderatorRouter   from './routes/moderator.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -36,17 +39,17 @@ app.use(morgan('combined', {
 }));
 app.use(generalLimiter);
 
-// ── Routes ────────────────────────────────────────────────────────
 app.use('/api/v1/health',       healthRouter);
 app.use('/api/v1/maintenance',  maintenanceRouter);
 app.use('/api/v1/auth',         authRouter);
+app.use('/api/v1/admin',        adminRouter);
+app.use('/api/v1/superadmin',   superAdminRouter);
+app.use('/api/v1/moderator',    moderatorRouter);
 
-// ── 404 ──────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ success: false, error: 'Route not found', path: req.originalUrl });
 });
 
-// ── Global error handler ─────────────────────────────────────────
 app.use((err, req, res, _next) => {
   logger.error(err.message, {
     stack: err.stack,
@@ -63,7 +66,6 @@ app.use((err, req, res, _next) => {
   });
 });
 
-// ── Startup ───────────────────────────────────────────────────────
 const start = async () => {
   logger.info('Starting CareerPilot backend...');
   const dbOk    = await testDB();

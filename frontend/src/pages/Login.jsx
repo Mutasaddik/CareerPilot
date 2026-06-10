@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMutation } from '@tanstack/react-query';
-import { Eye, EyeOff, Zap, ArrowRight, Mail, Lock } from 'lucide-react';
+import { Eye, EyeOff, Zap, ArrowRight, ArrowLeft, Mail, Lock } from 'lucide-react';
 import { loginUser } from '../api/authApi.js';
 import useAuthStore from '../store/authStore.js';
 import ParticleBackground from '../components/ParticleBackground.jsx';
@@ -14,14 +14,22 @@ const shakeVariant = {
   },
 };
 
-const OAuthButton = ({ icon, label, href }) => (
-  <a href={href}
-    className="flex items-center gap-3 w-full px-4 py-3 rounded-xl border border-border bg-bg-primary/40 hover:bg-bg-primary/70 hover:border-border-bright transition-all duration-200 text-sm font-medium text-text-secondary hover:text-text-primary">
+const OAuthButton = ({ icon, label, href, disabled }) => (
+  <a
+    href={disabled ? '#' : href}
+    onClick={disabled ? (e) => e.preventDefault() : undefined}
+    className={[
+      'flex items-center gap-3 w-full px-4 py-3 rounded-xl border transition-all duration-200 text-sm font-medium',
+      disabled
+        ? 'border-border/50 bg-bg-primary/20 text-text-muted cursor-not-allowed opacity-50'
+        : 'border-border bg-bg-primary/40 hover:bg-bg-primary/70 hover:border-border-bright text-text-secondary hover:text-text-primary cursor-pointer',
+    ].join(' ')}
+  >
     <span className="text-lg">{icon}</span>
     <span>{label}</span>
+    {disabled && <span className="ml-auto text-xs text-text-muted">Coming soon</span>}
   </a>
 );
-
 export default function Login() {
   const navigate   = useNavigate();
   const setUser    = useAuthStore((s) => s.setUser);
@@ -30,6 +38,8 @@ export default function Login() {
   const [shaking,  setShaking]  = useState(false);
   const [remember, setRemember] = useState(false);
   const [form,     setForm]     = useState({ email: '', password: '' });
+
+  const oauthConfigured = false; // Set to true when OAuth keys are added to .env
 
   const mutation = useMutation({
     mutationFn: loginUser,
@@ -44,7 +54,11 @@ export default function Login() {
       navigate(data.redirect || '/dashboard');
     },
     onError: (err) => {
-      setError(err.response?.data?.error || 'Invalid email or password.');
+      const responseData = err.response?.data;
+      if (responseData?.needsVerification) {
+        return navigate('/verify-otp', { state: { email: form.email, purpose: 'registration' } });
+      }
+      setError(responseData?.error || 'Invalid email or password.');
       setShaking(true);
       setTimeout(() => setShaking(false), 600);
     },
@@ -72,6 +86,15 @@ export default function Login() {
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
         className="relative z-10 w-full max-w-md">
 
+        {/* Back button */}
+        <div className="mb-6">
+          <Link to="/" className="inline-flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Home
+          </Link>
+        </div>
+
+        {/* Logo */}
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-brand-gradient flex items-center justify-center shadow-glow-brand">
@@ -82,21 +105,23 @@ export default function Login() {
           <p className="mt-3 text-text-secondary text-sm">Welcome back</p>
         </div>
 
-        <motion.div variants={shakeVariant} animate={shaking ? 'shake' : ''} className="glass-card p-8 space-y-6">
+        <motion.div variants={shakeVariant} animate={shaking ? 'shake' : ''}
+          className="glass-card p-8 space-y-6">
+
           <div>
             <h1 className="font-display font-bold text-2xl text-text-primary">Sign in to continue</h1>
             <p className="text-text-secondary text-sm mt-1">Your career co-pilot is waiting.</p>
           </div>
 
           <div className="space-y-2">
-            <OAuthButton href="/api/v1/auth/google"   icon="G"  label="Continue with Google" />
-            <OAuthButton href="/api/v1/auth/linkedin"  icon="in" label="Continue with LinkedIn" />
-            <OAuthButton href="/api/v1/auth/github"    icon="⌥"  label="Continue with GitHub" />
+            <OAuthButton href="/api/v1/auth/google"   icon="G"  label="Continue with Google"   disabled={!oauthConfigured} />
+            <OAuthButton href="/api/v1/auth/linkedin"  icon="in" label="Continue with LinkedIn"  disabled={!oauthConfigured} />
+            <OAuthButton href="/api/v1/auth/github"    icon="⌥"  label="Continue with GitHub"    disabled={!oauthConfigured} />
           </div>
 
           <div className="flex items-center gap-3">
             <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-text-muted">or</span>
+            <span className="text-xs text-text-muted">or sign in with email</span>
             <div className="flex-1 h-px bg-border" />
           </div>
 
@@ -130,11 +155,14 @@ export default function Login() {
 
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
+                <input type="checkbox" checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
                   className="w-4 h-4 rounded border-border bg-bg-primary accent-brand-purple" />
                 <span className="text-sm text-text-secondary">Remember me</span>
               </label>
-              <Link to="/forgot-password" className="text-sm text-brand-cyan hover:underline">Forgot password?</Link>
+              <Link to="/forgot-password" className="text-sm text-brand-cyan hover:underline">
+                Forgot password?
+              </Link>
             </div>
 
             <button type="submit" disabled={mutation.isPending}
@@ -153,7 +181,9 @@ export default function Login() {
 
           <p className="text-center text-sm text-text-secondary">
             Don't have an account?{' '}
-            <Link to="/register" className="text-brand-cyan hover:underline font-medium">Get Started Free</Link>
+            <Link to="/register" className="text-brand-cyan hover:underline font-medium">
+              Get Started Free
+            </Link>
           </p>
         </motion.div>
       </motion.div>

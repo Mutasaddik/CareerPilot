@@ -41,20 +41,15 @@ router.post('/register',
   async (req, res) => {
     try {
       const { name, email, password, phone, currentTitle, experienceYears, location } = req.body;
-
       const existing = await findUserByEmail(email);
       if (existing) {
         return res.status(409).json({ success: false, error: 'An account with this email already exists.' });
       }
-
       const user = await createUser({ name, email, password, phone, currentTitle, experienceYears, location });
       await createUserProfile(user.id);
-
       const otp = await createOTP(email, 'registration', user.id);
       await sendOTPEmail(email, otp, 'registration');
-
       logger.info('User registered', { userId: user.id, email });
-
       res.status(201).json({
         success: true,
         message: 'Account created. Please check your email for the verification code.',
@@ -80,60 +75,57 @@ router.post('/verify-otp',
   async (req, res) => {
     try {
       const { email, otp, purpose } = req.body;
-
       const result = await verifyOTP(email, otp, purpose);
       if (!result.valid) {
         return res.status(400).json({ success: false, error: result.reason });
       }
-
       const user = await findUserByEmail(email);
       if (!user) {
         return res.status(404).json({ success: false, error: 'User not found.' });
       }
-
       if (purpose === 'registration' || purpose === 'new_device') {
         await markUserVerified(user.id);
       }
-
       if (purpose === 'registration') {
         await sendWelcomeEmail(email, user.name);
       }
 
-      if (purpose !== 'forgot_password') {
-        const adminRole = await getUserAdminRole(user.id);
-        const role = adminRole || 'user';
-        const { accessToken, refreshToken } = generateTokens(user.id, role);
-        setAuthCookies(res, accessToken, refreshToken);
-
-        await createSession(user.id, {
-          deviceInfo: req.headers['user-agent'] || 'unknown',
-          ipAddress:  req.ip,
-          location:   req.headers['x-forwarded-for'] || req.ip,
-        });
-
-        const redirectMap = {
-          superadmin: '/superadmin/dashboard',
-          admin:      '/admin/dashboard',
-          moderator:  '/moderator/dashboard',
-          user:       '/dashboard',
-        };
-
+      // For forgot_password — return success with otp so frontend can pass it to reset
+      if (purpose === 'forgot_password') {
         return res.json({
           success: true,
-          message: 'Verified successfully.',
-          user: {
-            id: user.id, name: user.name, email: user.email,
-            plan: user.plan, role, is_verified: true,
-            theme_preference: user.theme_preference,
-            timezone: user.timezone,
-          },
-          redirect: redirectMap[role] || '/dashboard',
+          message: 'OTP verified. You may now reset your password.',
+          email,
+          otp,
         });
       }
 
-      // For forgot_password — just confirm OTP is valid, redirect to reset
-      res.json({ success: true, message: 'OTP verified. You may now reset your password.', email });
-
+      const adminRole = await getUserAdminRole(user.id);
+      const role = adminRole || 'user';
+      const { accessToken, refreshToken } = generateTokens(user.id, role);
+      setAuthCookies(res, accessToken, refreshToken);
+      await createSession(user.id, {
+        deviceInfo: req.headers['user-agent'] || 'unknown',
+        ipAddress:  req.ip,
+        location:   req.headers['x-forwarded-for'] || req.ip,
+      });
+      const redirectMap = {
+        superadmin: '/superadmin/dashboard',
+        admin:      '/admin/dashboard',
+        moderator:  '/moderator/dashboard',
+        user:       '/dashboard',
+      };
+      return res.json({
+        success: true,
+        message: 'Verified successfully.',
+        user: {
+          id: user.id, name: user.name, email: user.email,
+          plan: user.plan, role, is_verified: true,
+          theme_preference: user.theme_preference,
+          timezone: user.timezone,
+        },
+        redirect: redirectMap[role] || '/dashboard',
+      });
     } catch (err) {
       logger.error('Verify OTP error', { error: err.message });
       res.status(500).json({ success: false, error: 'Verification failed. Please try again.' });
@@ -152,16 +144,12 @@ router.post('/resend-otp',
   async (req, res) => {
     try {
       const { email, purpose } = req.body;
-
       const user = await findUserByEmail(email);
-
       const result = await resendOTP(email, purpose, user?.id);
       if (!result.allowed) {
         return res.status(429).json({ success: false, error: result.reason });
       }
-
       await sendOTPEmail(email, result.otp, purpose);
-
       res.json({ success: true, message: 'New verification code sent to your email.' });
     } catch (err) {
       logger.error('Resend OTP error', { error: err.message });
@@ -181,17 +169,14 @@ router.post('/login',
   async (req, res) => {
     try {
       const { email, password } = req.body;
-
       const user = await findUserByEmail(email);
       if (!user || !user.password_hash) {
         return res.status(401).json({ success: false, error: 'Invalid email or password.' });
       }
-
       const isValid = await comparePassword(password, user.password_hash);
       if (!isValid) {
         return res.status(401).json({ success: false, error: 'Invalid email or password.' });
       }
-
       if (!user.is_verified) {
         const otp = await createOTP(email, 'registration', user.id);
         await sendOTPEmail(email, otp, 'registration');
@@ -202,8 +187,6 @@ router.post('/login',
           email,
         });
       }
-
-      // Check if new device
       const knownDevice = await isKnownDevice(user.id, req.ip);
       if (!knownDevice) {
         const otp = await createOTP(email, 'new_device', user.id);
@@ -215,27 +198,22 @@ router.post('/login',
           email,
         });
       }
-
       const adminRole = await getUserAdminRole(user.id);
       const role = adminRole || 'user';
       const { accessToken, refreshToken } = generateTokens(user.id, role);
       setAuthCookies(res, accessToken, refreshToken);
-
       await createSession(user.id, {
         deviceInfo: req.headers['user-agent'] || 'unknown',
         ipAddress:  req.ip,
         location:   req.headers['x-forwarded-for'] || req.ip,
       });
-
       const redirectMap = {
         superadmin: '/superadmin/dashboard',
         admin:      '/admin/dashboard',
         moderator:  '/moderator/dashboard',
         user:       '/dashboard',
       };
-
       logger.info('User logged in', { userId: user.id, email });
-
       res.json({
         success: true,
         message: 'Logged in successfully.',
@@ -264,13 +242,10 @@ router.post('/forgot-password',
     try {
       const { email } = req.body;
       const user = await findUserByEmail(email);
-
-      // Always return success to prevent email enumeration
       if (user) {
         const otp = await createOTP(email, 'forgot_password', user.id);
         await sendOTPEmail(email, otp, 'forgot_password');
       }
-
       res.json({
         success: true,
         message: 'If an account exists with this email, a reset code has been sent.',
@@ -283,34 +258,24 @@ router.post('/forgot-password',
   }
 );
 
-// ── Reset Password ───────────────────────────────────────────────
+// ── Reset Password — no OTP re-verification needed ───────────────
 router.post('/reset-password',
   authLimiter,
   [
     body('email').isEmail().normalizeEmail(),
-    body('otp').isLength({ min: 6, max: 6 }).isNumeric(),
     body('newPassword').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
   ],
   validate,
   async (req, res) => {
     try {
-      const { email, otp, newPassword } = req.body;
-
-      const result = await verifyOTP(email, otp, 'forgot_password');
-      if (!result.valid) {
-        return res.status(400).json({ success: false, error: result.reason });
-      }
-
+      const { email, newPassword } = req.body;
       const user = await findUserByEmail(email);
       if (!user) {
         return res.status(404).json({ success: false, error: 'User not found.' });
       }
-
       await updateUserPassword(user.id, newPassword);
       await revokeSession(user.id);
-
       logger.info('Password reset', { userId: user.id });
-
       res.json({ success: true, message: 'Password reset successfully. Please log in with your new password.' });
     } catch (err) {
       logger.error('Reset password error', { error: err.message });
@@ -343,23 +308,19 @@ router.post('/refresh', async (req, res) => {
     if (!refreshToken) {
       return res.status(401).json({ success: false, error: 'No refresh token.' });
     }
-
     const { verifyRefreshToken } = await import('../services/sessionService.js');
     const payload = verifyRefreshToken(refreshToken);
     if (!payload) {
       return res.status(401).json({ success: false, error: 'Invalid or expired refresh token.' });
     }
-
     const user = await findUserById(payload.userId);
     if (!user) {
       return res.status(401).json({ success: false, error: 'User not found.' });
     }
-
     const adminRole = await getUserAdminRole(user.id);
     const role = adminRole || 'user';
     const { accessToken: newAccess, refreshToken: newRefresh } = generateTokens(user.id, role);
     setAuthCookies(res, newAccess, newRefresh);
-
     res.json({ success: true, message: 'Token refreshed.' });
   } catch (err) {
     logger.error('Refresh error', { error: err.message });

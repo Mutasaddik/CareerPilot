@@ -2,9 +2,8 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMutation } from '@tanstack/react-query';
-import { Eye, EyeOff, Zap, ArrowRight, User, Mail, Lock, Phone, Briefcase, MapPin } from 'lucide-react';
+import { Eye, EyeOff, Zap, ArrowRight, ArrowLeft, User, Mail, Lock, Phone, Briefcase, MapPin } from 'lucide-react';
 import { registerUser } from '../api/authApi.js';
-import useAuthStore from '../store/authStore.js';
 import ParticleBackground from '../components/ParticleBackground.jsx';
 
 const fadeUp = {
@@ -15,16 +14,16 @@ const fadeUp = {
 const getPasswordStrength = (password) => {
   if (!password) return { score: 0, label: '', color: '' };
   let score = 0;
-  if (password.length >= 8)  score++;
-  if (password.length >= 12) score++;
-  if (/[A-Z]/.test(password)) score++;
-  if (/[0-9]/.test(password)) score++;
+  if (password.length >= 8)          score++;
+  if (password.length >= 12)         score++;
+  if (/[A-Z]/.test(password))        score++;
+  if (/[0-9]/.test(password))        score++;
   if (/[^A-Za-z0-9]/.test(password)) score++;
-  if (score <= 1) return { score, label: 'Weak',   color: '#ef4444' };
-  if (score <= 2) return { score, label: 'Fair',   color: '#f59e0b' };
-  if (score <= 3) return { score, label: 'Good',   color: '#3b82f6' };
-  if (score <= 4) return { score, label: 'Strong', color: '#22c55e' };
-  return { score, label: 'Very Strong', color: '#22c55e' };
+  if (score <= 1) return { score, label: 'Weak',        color: '#ef4444' };
+  if (score <= 2) return { score, label: 'Fair',        color: '#f59e0b' };
+  if (score <= 3) return { score, label: 'Good',        color: '#3b82f6' };
+  if (score <= 4) return { score, label: 'Strong',      color: '#22c55e' };
+  return             { score, label: 'Very Strong',  color: '#22c55e' };
 };
 
 const getProfileCompletion = (form) => {
@@ -33,16 +32,20 @@ const getProfileCompletion = (form) => {
   return Math.round((filled / fields.length) * 100);
 };
 
-const OAuthButton = ({ icon, label, href }) => (
-  <a href={href}
-    className="flex items-center gap-3 w-full px-4 py-3 rounded-xl border border-border bg-bg-primary/40 hover:bg-bg-primary/70 hover:border-border-bright transition-all duration-200 text-sm font-medium text-text-secondary hover:text-text-primary">
+const OAuthButton = ({ icon, label }) => (
+  <button
+    type="button"
+    disabled
+    className="flex items-center gap-3 w-full px-4 py-3 rounded-xl border border-border/50 bg-bg-primary/20 text-text-muted cursor-not-allowed opacity-50 text-sm font-medium"
+  >
     <span className="text-lg">{icon}</span>
     <span>{label}</span>
-  </a>
+    <span className="ml-auto text-xs">Coming soon</span>
+  </button>
 );
 
 export default function Register() {
-  const navigate  = useNavigate();
+  const navigate   = useNavigate();
   const [showPass, setShowPass] = useState(false);
   const [error,    setError]    = useState('');
   const [form,     setForm]     = useState({
@@ -50,12 +53,12 @@ export default function Register() {
     currentTitle: '', experienceYears: '', location: '',
   });
 
-  const completion  = getProfileCompletion(form);
-  const pwStrength  = getPasswordStrength(form.password);
+  const completion = getProfileCompletion(form);
+  const pwStrength = getPasswordStrength(form.password);
 
   const mutation = useMutation({
     mutationFn: registerUser,
-    onSuccess: (data) => {
+    onSuccess: () => {
       navigate('/verify-otp', {
         state: { email: form.email, purpose: 'registration', name: form.name },
       });
@@ -72,8 +75,8 @@ export default function Register() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.name.trim())     return setError('Full name is required.');
-    if (!form.email.trim())    return setError('Email is required.');
+    if (!form.name.trim())        return setError('Full name is required.');
+    if (!form.email.trim())       return setError('Email is required.');
     if (form.password.length < 8) return setError('Password must be at least 8 characters.');
     mutation.mutate({
       name:            form.name.trim(),
@@ -94,6 +97,14 @@ export default function Register() {
 
       <motion.div initial="hidden" animate="visible" variants={fadeUp}
         className="relative z-10 w-full max-w-md">
+
+        {/* Back button */}
+        <div className="mb-6">
+          <Link to="/" className="inline-flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Home
+          </Link>
+        </div>
 
         {/* Logo */}
         <div className="text-center mb-8">
@@ -133,9 +144,9 @@ export default function Register() {
 
           {/* OAuth buttons */}
           <div className="space-y-2">
-            <OAuthButton href="/api/v1/auth/google"   icon="G" label="Continue with Google" />
-            <OAuthButton href="/api/v1/auth/linkedin"  icon="in" label="Continue with LinkedIn — Auto-imports profile" />
-            <OAuthButton href="/api/v1/auth/github"    icon="⌥" label="Continue with GitHub" />
+            <OAuthButton icon="G"  label="Continue with Google" />
+            <OAuthButton icon="in" label="Continue with LinkedIn — Auto-imports profile" />
+            <OAuthButton icon="⌥"  label="Continue with GitHub" />
           </div>
 
           <div className="flex items-center gap-3">
@@ -156,7 +167,6 @@ export default function Register() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Name */}
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
               <input name="name" type="text" placeholder="Full Name *"
@@ -164,7 +174,6 @@ export default function Register() {
                 className="input-field pl-10" required />
             </div>
 
-            {/* Email */}
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
               <input name="email" type="email" placeholder="Email *"
@@ -172,7 +181,6 @@ export default function Register() {
                 className="input-field pl-10" required />
             </div>
 
-            {/* Password */}
             <div className="space-y-2">
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
@@ -197,7 +205,6 @@ export default function Register() {
               )}
             </div>
 
-            {/* Optional fields */}
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
               <input name="phone" type="tel" placeholder="Phone (Optional)"

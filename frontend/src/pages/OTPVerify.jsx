@@ -10,41 +10,58 @@ import ParticleBackground from '../components/ParticleBackground.jsx';
 const OTP_LENGTH = 6;
 
 export default function OTPVerify() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const setUser  = useAuthStore((s) => s.setUser);
+  const location   = useLocation();
+  const navigate   = useNavigate();
+  const setUser    = useAuthStore((s) => s.setUser);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const { email, purpose } = location.state || {};
 
-  const [digits,   setDigits]   = useState(Array(OTP_LENGTH).fill(''));
-  const [error,    setError]    = useState('');
-  const [success,  setSuccess]  = useState(false);
-  const [timeLeft, setTimeLeft] = useState(120);
-  const [cooldown, setCooldown] = useState(0);
-  const [resendMsg,setResendMsg]= useState('');
+  const [digits,    setDigits]    = useState(Array(OTP_LENGTH).fill(''));
+  const [error,     setError]     = useState('');
+  const [success,   setSuccess]   = useState(false);
+  const [timeLeft,  setTimeLeft]  = useState(120);
+  const [cooldown,  setCooldown]  = useState(0);
+  const [resendMsg, setResendMsg] = useState('');
   const inputRefs = useRef([]);
 
-  useEffect(() => { if (!email) navigate('/login'); }, [email, navigate]);
+  // If already authenticated redirect away
+  useEffect(() => {
+    if (isAuthenticated) navigate('/dashboard', { replace: true });
+  }, [isAuthenticated, navigate]);
+
+  // If no email in state redirect to login
+  useEffect(() => {
+    if (!email) navigate('/login', { replace: true });
+  }, [email, navigate]);
+
   useEffect(() => {
     if (timeLeft <= 0) return;
     const t = setInterval(() => setTimeLeft((v) => v - 1), 1000);
     return () => clearInterval(t);
   }, [timeLeft]);
+
   useEffect(() => {
     if (cooldown <= 0) return;
     const t = setInterval(() => setCooldown((v) => v - 1), 1000);
     return () => clearInterval(t);
   }, [cooldown]);
 
-  const formatTime = (s) => `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
+  const formatTime = (s) =>
+    `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
   const verifyMutation = useMutation({
     mutationFn: verifyOTP,
     onSuccess: (data) => {
       setSuccess(true);
       setTimeout(() => {
-        if (purpose === 'forgot_password') return navigate('/reset-password', { state: { email } });
+        if (purpose === 'forgot_password') {
+          return navigate('/reset-password', {
+            state: { email },
+            replace: true,
+          });
+        }
         if (data.user) setUser(data.user);
-        navigate(data.redirect || '/dashboard');
+        navigate(data.redirect || '/dashboard', { replace: true });
       }, 1500);
     },
     onError: (err) => {
@@ -84,13 +101,17 @@ export default function OTPVerify() {
   };
 
   const handleKeyDown = (index, e) => {
-    if (e.key === 'Backspace' && !digits[index] && index > 0) inputRefs.current[index - 1]?.focus();
+    if (e.key === 'Backspace' && !digits[index] && index > 0)
+      inputRefs.current[index - 1]?.focus();
   };
 
   const handlePaste = (e) => {
     e.preventDefault();
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, OTP_LENGTH);
-    if (pasted.length === OTP_LENGTH) { setDigits(pasted.split('')); submitOTP(pasted); }
+    if (pasted.length === OTP_LENGTH) {
+      setDigits(pasted.split(''));
+      submitOTP(pasted);
+    }
   };
 
   if (!email) return null;
@@ -132,13 +153,16 @@ export default function OTPVerify() {
             </div>
             <h1 className="font-display font-bold text-2xl text-text-primary">Verify your email</h1>
             <p className="text-text-secondary text-sm">
-              We sent a 6-digit code to <span className="text-text-primary font-medium">{email}</span>
+              We sent a 6-digit code to{' '}
+              <span className="text-text-primary font-medium">{email}</span>
             </p>
           </div>
 
           <div className="text-center">
             <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-mono font-bold ${
-              timeLeft <= 30 ? 'bg-danger/10 text-danger border border-danger/20' : 'bg-bg-primary/60 text-text-secondary'
+              timeLeft <= 30
+                ? 'bg-danger/10 text-danger border border-danger/20'
+                : 'bg-bg-primary/60 text-text-secondary'
             }`}>
               <div className={`w-2 h-2 rounded-full ${timeLeft > 0 ? 'animate-pulse bg-current' : 'bg-danger'}`} />
               {timeLeft > 0 ? `Expires in ${formatTime(timeLeft)}` : 'Code expired'}
@@ -147,14 +171,18 @@ export default function OTPVerify() {
 
           <div className="flex gap-3 justify-center" onPaste={handlePaste}>
             {digits.map((digit, index) => (
-              <input key={index} ref={(el) => (inputRefs.current[index] = el)}
-                type="text" inputMode="numeric" maxLength={1} value={digit}
+              <input
+                key={index}
+                ref={(el) => (inputRefs.current[index] = el)}
+                type="text" inputMode="numeric" maxLength={1}
+                value={digit}
                 onChange={(e) => handleDigitChange(index, e.target.value)}
                 onKeyDown={(e) => handleKeyDown(index, e)}
                 className={`w-12 h-14 text-center text-xl font-bold rounded-xl border transition-all outline-none bg-bg-primary/60
                   ${digit ? 'border-brand-purple text-text-primary' : 'border-border text-text-primary'}
                   focus:border-brand-purple`}
-                autoFocus={index === 0} />
+                autoFocus={index === 0}
+              />
             ))}
           </div>
 
@@ -169,7 +197,8 @@ export default function OTPVerify() {
             )}
           </AnimatePresence>
 
-          <button onClick={() => submitOTP(digits.join(''))}
+          <button
+            onClick={() => submitOTP(digits.join(''))}
             disabled={digits.join('').length !== OTP_LENGTH || verifyMutation.isPending || success}
             className="btn-primary w-full py-3 text-base disabled:opacity-50 disabled:cursor-not-allowed">
             {verifyMutation.isPending ? 'Verifying...' : 'Verify Code'}
@@ -178,7 +207,8 @@ export default function OTPVerify() {
           <div className="text-center">
             <p className="text-sm text-text-secondary">
               Didn't receive the code?{' '}
-              <button onClick={() => resendMutation.mutate({ email, purpose })}
+              <button
+                onClick={() => resendMutation.mutate({ email, purpose })}
                 disabled={cooldown > 0 || resendMutation.isPending}
                 className="text-brand-cyan hover:underline font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                 {resendMutation.isPending ? 'Sending...' : cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend OTP'}
