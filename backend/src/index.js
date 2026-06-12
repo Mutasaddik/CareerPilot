@@ -12,19 +12,24 @@ import { testConnection as testRedis } from './models/redis.js';
 import { generalLimiter } from './middleware/rateLimiter.js';
 
 import healthRouter      from './routes/health.js';
+import { loadTaxonomy, loadRoleMappings, loadCuratedPacks } from './services/taxonomyService.js';
+import { scheduleScraperJob, scraperWorker } from './queue/scraperQueue.js';
 import maintenanceRouter from './routes/maintenance.js';
 import authRouter        from './routes/auth.js';
+import userRouter        from './routes/user.js';
+import cvRouter          from './routes/cv.js';
+import jobsRouter        from './routes/jobs.js';
 import adminRouter       from './routes/admin.js';
 import superAdminRouter  from './routes/superadmin.js';
 import moderatorRouter   from './routes/moderator.js';
 
-const app = express();
+const app        = express();
 const httpServer = createServer(app);
-const PORT = process.env.PORT || 5000;
+const PORT       = process.env.PORT || 5000;
 
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin:  process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -35,16 +40,19 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 app.use(morgan('combined', {
   stream: { write: (msg) => logger.http(msg.trim()) },
-  skip: (req) => req.path === '/api/v1/health',
+  skip:   (req) => req.path === '/api/v1/health',
 }));
 app.use(generalLimiter);
 
-app.use('/api/v1/health',       healthRouter);
-app.use('/api/v1/maintenance',  maintenanceRouter);
-app.use('/api/v1/auth',         authRouter);
-app.use('/api/v1/admin',        adminRouter);
-app.use('/api/v1/superadmin',   superAdminRouter);
-app.use('/api/v1/moderator',    moderatorRouter);
+app.use('/api/v1/health',      healthRouter);
+app.use('/api/v1/maintenance', maintenanceRouter);
+app.use('/api/v1/auth',        authRouter);
+app.use('/api/v1/user',        userRouter);
+app.use('/api/v1/cv',          cvRouter);
+app.use('/api/v1/jobs',        jobsRouter);
+app.use('/api/v1/admin',       adminRouter);
+app.use('/api/v1/superadmin',  superAdminRouter);
+app.use('/api/v1/moderator',   moderatorRouter);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, error: 'Route not found', path: req.originalUrl });
@@ -52,16 +60,16 @@ app.use((req, res) => {
 
 app.use((err, req, res, _next) => {
   logger.error(err.message, {
-    stack: err.stack,
+    stack:   err.stack,
     user_id: req.user?.id || null,
-    route: `${req.method} ${req.originalUrl}`,
-    ip: req.ip,
+    route:   `${req.method} ${req.originalUrl}`,
+    ip:      req.ip,
   });
   const status = err.status || err.statusCode || 500;
-  const isDev = process.env.NODE_ENV === 'development';
+  const isDev  = process.env.NODE_ENV === 'development';
   res.status(status).json({
     success: false,
-    error: status === 500 ? 'Something went wrong. Please try again.' : err.message,
+    error:   status === 500 ? 'Something went wrong. Please try again.' : err.message,
     ...(isDev && { stack: err.stack }),
   });
 });
@@ -72,6 +80,11 @@ const start = async () => {
   const redisOk = await testRedis();
   if (!dbOk)    { logger.error('PostgreSQL unavailable'); process.exit(1); }
   if (!redisOk) { logger.error('Redis unavailable');      process.exit(1); }
+  await loadTaxonomy();
+  await loadRoleMappings();
+  await loadCuratedPacks();
+  await scheduleScraperJob();
+
   httpServer.listen(PORT, () => {
     logger.info(`CareerPilot API running on port ${PORT}`, {
       env: process.env.NODE_ENV,

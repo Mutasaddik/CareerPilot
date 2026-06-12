@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useMutation } from '@tanstack/react-query';
 import {
   Briefcase, FileText, BarChart3, Brain, TrendingUp,
   Target, Star, CheckCircle, ChevronRight, Zap,
-  Shield, ArrowRight, Menu, X
+  Shield, ArrowRight, Menu, X, LayoutDashboard, LogOut
 } from 'lucide-react';
 import ParticleBackground from '../components/ParticleBackground.jsx';
+import useAuthStore from '../store/authStore.js';
+import { logoutUser } from '../api/authApi.js';
 
 const fadeUp = {
   hidden:  { opacity: 0, y: 30 },
@@ -67,6 +70,20 @@ const HOW_IT_WORKS = [
 
 function Navbar({ scrolled }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const getRedirectPath = useAuthStore((s) => s.getRedirectPath);
+  const clearUser       = useAuthStore((s) => s.clearUser);
+
+  const logoutMutation = useMutation({
+    mutationFn: logoutUser,
+    onSuccess: () => {
+      clearUser();
+      setMobileOpen(false);
+    },
+  });
+
+  const dashboardPath = isAuthenticated ? getRedirectPath() : '/dashboard';
+
   return (
     <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
       scrolled ? 'py-3 bg-bg-secondary/90 backdrop-blur-md border-b border-border' : 'py-5'
@@ -78,6 +95,7 @@ function Navbar({ scrolled }) {
           </div>
           <span className="font-display font-bold text-lg text-text-primary">CareerPilot</span>
         </div>
+
         <div className="hidden md:flex items-center gap-8">
           {NAV_LINKS.map((link) => (
             <a key={link} href={`#${link.toLowerCase().replace(' ', '-')}`}
@@ -86,15 +104,39 @@ function Navbar({ scrolled }) {
             </a>
           ))}
         </div>
+
+        {/* Desktop nav buttons */}
         <div className="hidden md:flex items-center gap-3">
-          <Link to="/login"    className="btn-ghost text-sm py-2 px-4">Sign In</Link>
-          <Link to="/register" className="btn-primary text-sm py-2 px-5">Get Started Free</Link>
+          {isAuthenticated ? (
+            <>
+              <Link to={dashboardPath}
+                className="btn-ghost text-sm py-2 px-4 flex items-center gap-2">
+                <LayoutDashboard className="w-4 h-4" /> Dashboard
+              </Link>
+              <button
+                onClick={() => logoutMutation.mutate()}
+                disabled={logoutMutation.isPending}
+                className="btn-primary text-sm py-2 px-5 flex items-center gap-2">
+                <LogOut className="w-4 h-4" />
+                {logoutMutation.isPending ? 'Signing out...' : 'Sign Out'}
+              </button>
+            </>
+          ) : (
+            <>
+              <Link to="/login"    className="btn-ghost text-sm py-2 px-4">Sign In</Link>
+              <Link to="/register" className="btn-primary text-sm py-2 px-5">Get Started Free</Link>
+            </>
+          )}
         </div>
+
+        {/* Mobile menu toggle */}
         <button className="md:hidden text-text-secondary hover:text-text-primary"
           onClick={() => setMobileOpen(!mobileOpen)}>
           {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </button>
       </div>
+
+      {/* Mobile menu */}
       {mobileOpen && (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
           className="md:hidden mt-2 mx-4 rounded-2xl glass-card p-4 space-y-3">
@@ -104,8 +146,23 @@ function Navbar({ scrolled }) {
               onClick={() => setMobileOpen(false)}>{link}</a>
           ))}
           <div className="pt-2 space-y-2 border-t border-border">
-            <Link to="/login"    className="block btn-ghost text-sm text-center">Sign In</Link>
-            <Link to="/register" className="block btn-primary text-sm text-center">Get Started Free</Link>
+            {isAuthenticated ? (
+              <>
+                <Link to={dashboardPath} onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-2 btn-ghost text-sm text-center justify-center">
+                  <LayoutDashboard className="w-4 h-4" /> Dashboard
+                </Link>
+                <button onClick={() => logoutMutation.mutate()}
+                  className="w-full btn-primary text-sm flex items-center gap-2 justify-center">
+                  <LogOut className="w-4 h-4" /> Sign Out
+                </button>
+              </>
+            ) : (
+              <>
+                <Link to="/login"    onClick={() => setMobileOpen(false)} className="block btn-ghost text-sm text-center">Sign In</Link>
+                <Link to="/register" onClick={() => setMobileOpen(false)} className="block btn-primary text-sm text-center">Get Started Free</Link>
+              </>
+            )}
           </div>
         </motion.div>
       )}

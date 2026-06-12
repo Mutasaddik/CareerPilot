@@ -28,10 +28,10 @@ export const getCache = async (key) => {
   }
 };
 
-export const setCache = async (key, value, ttlMs) => {
+export const setCache = async (key, value, ttlSeconds) => {
   try {
-    const ttlSeconds = Math.floor(ttlMs / 1000);
-    await redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
+    const ttl = Math.max(Math.floor(ttlSeconds), 1); // already in seconds
+    await redis.set(key, JSON.stringify(value), 'EX', ttl);
   } catch (err) {
     logger.error('Cache set error', { key, error: err.message });
   }

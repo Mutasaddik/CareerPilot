@@ -8,29 +8,23 @@ import {
 import logger from '../services/loggerService.js';
 
 const router = express.Router();
-
-// All routes require admin access
 router.use(requireAdminAccess);
 
-// ── Dashboard stats ───────────────────────────────────────────────
 router.get('/stats', async (req, res) => {
   try {
     const stats = await getPlatformStats();
     res.json({ success: true, stats });
   } catch (err) {
-    logger.error('Admin stats error', { error: err.message });
     res.status(500).json({ success: false, error: 'Failed to fetch stats.' });
   }
 });
 
-// ── User management ───────────────────────────────────────────────
 router.get('/users', async (req, res) => {
   try {
     const { page = 1, limit = 20, search = '' } = req.query;
     const result = await getAllUsers({ page: parseInt(page), limit: parseInt(limit), search });
     res.json({ success: true, ...result });
   } catch (err) {
-    logger.error('Admin get users error', { error: err.message });
     res.status(500).json({ success: false, error: 'Failed to fetch users.' });
   }
 });
@@ -47,6 +41,10 @@ router.get('/users/:id', async (req, res) => {
 
 router.post('/users/:id/suspend', async (req, res) => {
   try {
+    const target = await getUserById(req.params.id);
+    if (target?.admin_role === 'superadmin' || target?.admin_role === 'admin') {
+      return res.status(403).json({ success: false, error: 'Cannot suspend admin or superadmin accounts.' });
+    }
     await suspendUser(req.params.id);
     await logAudit({
       performedBy: req.user.id, role: req.user.role,
@@ -73,7 +71,6 @@ router.post('/users/:id/unsuspend', async (req, res) => {
   }
 });
 
-// ── Scraper health ────────────────────────────────────────────────
 router.get('/scrapers', async (req, res) => {
   try {
     const scrapers = await getScraperHealth();
@@ -83,7 +80,6 @@ router.get('/scrapers', async (req, res) => {
   }
 });
 
-// ── Feature flags (view only for admin) ──────────────────────────
 router.get('/feature-flags', async (req, res) => {
   try {
     const flags = await getFeatureFlags();
@@ -93,7 +89,6 @@ router.get('/feature-flags', async (req, res) => {
   }
 });
 
-// ── Audit logs (own actions only for admin) ───────────────────────
 router.get('/audit-logs', async (req, res) => {
   try {
     const { page = 1, limit = 50 } = req.query;

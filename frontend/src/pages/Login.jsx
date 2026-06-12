@@ -14,22 +14,15 @@ const shakeVariant = {
   },
 };
 
-const OAuthButton = ({ icon, label, href, disabled }) => (
-  <a
-    href={disabled ? '#' : href}
-    onClick={disabled ? (e) => e.preventDefault() : undefined}
-    className={[
-      'flex items-center gap-3 w-full px-4 py-3 rounded-xl border transition-all duration-200 text-sm font-medium',
-      disabled
-        ? 'border-border/50 bg-bg-primary/20 text-text-muted cursor-not-allowed opacity-50'
-        : 'border-border bg-bg-primary/40 hover:bg-bg-primary/70 hover:border-border-bright text-text-secondary hover:text-text-primary cursor-pointer',
-    ].join(' ')}
-  >
+const OAuthButton = ({ icon, label }) => (
+  <button type="button" disabled
+    className="flex items-center gap-3 w-full px-4 py-3 rounded-xl border border-border/50 bg-bg-primary/20 text-text-muted cursor-not-allowed opacity-50 text-sm font-medium">
     <span className="text-lg">{icon}</span>
     <span>{label}</span>
-    {disabled && <span className="ml-auto text-xs text-text-muted">Coming soon</span>}
-  </a>
+    <span className="ml-auto text-xs">Coming soon</span>
+  </button>
 );
+
 export default function Login() {
   const navigate   = useNavigate();
   const setUser    = useAuthStore((s) => s.setUser);
@@ -38,8 +31,6 @@ export default function Login() {
   const [shaking,  setShaking]  = useState(false);
   const [remember, setRemember] = useState(false);
   const [form,     setForm]     = useState({ email: '', password: '' });
-
-  const oauthConfigured = false; // Set to true when OAuth keys are added to .env
 
   const mutation = useMutation({
     mutationFn: loginUser,
@@ -50,8 +41,17 @@ export default function Login() {
       if (data.needsVerification) {
         return navigate('/verify-otp', { state: { email: form.email, purpose: 'registration' } });
       }
+      // Set user in store FIRST with correct role
       setUser(data.user);
-      navigate(data.redirect || '/dashboard');
+      // Then navigate using the redirect from backend which has correct role path
+      const redirectMap = {
+        superadmin: '/superadmin/dashboard',
+        admin:      '/admin/dashboard',
+        moderator:  '/moderator/dashboard',
+        user:       '/dashboard',
+      };
+      const path = redirectMap[data.user?.role] || data.redirect || '/dashboard';
+      navigate(path, { replace: true });
     },
     onError: (err) => {
       const responseData = err.response?.data;
@@ -89,8 +89,7 @@ export default function Login() {
         {/* Back button */}
         <div className="mb-6">
           <Link to="/" className="inline-flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-            Back to Home
+            <ArrowLeft className="w-4 h-4" /> Back to Home
           </Link>
         </div>
 
@@ -114,9 +113,9 @@ export default function Login() {
           </div>
 
           <div className="space-y-2">
-            <OAuthButton href="/api/v1/auth/google"   icon="G"  label="Continue with Google"   disabled={!oauthConfigured} />
-            <OAuthButton href="/api/v1/auth/linkedin"  icon="in" label="Continue with LinkedIn"  disabled={!oauthConfigured} />
-            <OAuthButton href="/api/v1/auth/github"    icon="⌥"  label="Continue with GitHub"    disabled={!oauthConfigured} />
+            <OAuthButton icon="G"  label="Continue with Google" />
+            <OAuthButton icon="in" label="Continue with LinkedIn" />
+            <OAuthButton icon="⌥"  label="Continue with GitHub" />
           </div>
 
           <div className="flex items-center gap-3">
