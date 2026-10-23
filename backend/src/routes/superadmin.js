@@ -8,6 +8,7 @@ import {
   getScraperHealth, getFeatureFlags, updateFeatureFlag,
   logAudit,
 } from '../services/adminService.js';
+import { getCache, setCache } from '../models/redis.js';
 import logger from '../services/loggerService.js';
 
 const router = express.Router();
@@ -199,6 +200,45 @@ router.get('/audit-logs', async (req, res) => {
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to fetch audit logs.' });
+  }
+});
+
+// ── Regeneration rate limit config ───────────────────────────────
+// GET  /api/v1/superadmin/config/regen-limit  — get current limit
+// POST /api/v1/superadmin/config/regen-limit  — set new limit (2–30)
+router.get('/config/regen-limit', async (req, res) => {
+  try {
+    const raw   = await getCache('config:regen_daily_limit');
+    const limit = raw ? parseInt(raw) : 5;
+    res.json({ success: true, limit });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to fetch regen limit.' });
+  }
+});
+
+router.post('/config/regen-limit', async (req, res) => {
+  try {
+    const { limit } = req.body;
+    const parsed = parseInt(limit);
+    if (isNaN(parsed) || parsed < 2 || parsed > 30) {
+      return res.status(400).json({
+        success: false,
+        error: 'Limit must be a number between 2 and 30.',
+      });
+    }
+    // Persist indefinitely in Redis (no TTL — survives restarts via Redis persistence)
+    await setCache('config:regen_daily_limit', String(parsed), 0);
+    await logAudit({
+      performedBy: req.user.id, role: req.user.role,
+      action: 'update_regen_limit', targetType: 'system', targetId: null,
+      newValue: { regen_daily_limit: parsed },
+      ip: req.ip,
+    });
+    logger.info('Regen daily limit updated', { limit: parsed, by: req.user.id });
+    res.json({ success: true, limit: parsed, message: `Daily regeneration limit set to ${parsed}.` });
+  } catch (err) {
+    logger.error('POST /config/regen-limit error', { error: err.message });
+    res.status(500).json({ success: false, error: 'Failed to update regen limit.' });
   }
 });
 

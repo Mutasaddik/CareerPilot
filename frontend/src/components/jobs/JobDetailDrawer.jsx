@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   X, ExternalLink, Bookmark, BookmarkCheck, MapPin, Wifi,
   ChevronRight, Loader2, Star, Building2, TrendingUp,
-  Target, CheckCircle, XCircle, AlertCircle, Briefcase,
+  Target, CheckCircle, XCircle, AlertCircle, Briefcase, Sparkles,
 } from 'lucide-react';
 import { fetchJobById, saveJob, submitJobFeedback } from '../../api/jobApi.js';
+import { createCVRewrite } from '../../api/cvApi.js';
 import useJobStore from '../../store/jobStore.js';
 
 // ── Tab definitions ───────────────────────────────────────────────
@@ -52,33 +54,60 @@ const MatchAnalysisTab = ({ job }) => {
   const scoreColor = score >= 90 ? 'text-green-400' : score >= 70 ? 'text-amber-400' : score >= 50 ? 'text-blue-400' : 'text-red-400';
   const barColor   = score >= 90 ? 'green' : score >= 70 ? 'amber' : 'cyan';
 
+  // role_match is the field that exists in the stored JSON (not keyword_match)
+  const hasBreakdown = breakdown.role_match != null;
+
   return (
     <div className="space-y-5 p-5">
       {/* Overall score */}
       <div className="text-center py-4">
         <div className={`text-5xl font-black ${scoreColor}`}>{score}%</div>
         <p className="text-text-secondary text-sm mt-1">Match Score</p>
-        {breakdown.success_probability && (
+        {breakdown.success_probability > 0 && (
           <p className="text-text-muted text-xs mt-1">~{breakdown.success_probability}% success probability</p>
+        )}
+        {breakdown.user_family && breakdown.job_family && (
+          <p className="text-text-muted text-xs mt-1">
+            Your profile: <span className="text-brand-cyan font-medium capitalize">{breakdown.user_family}</span>
+            {' → '}
+            Job: <span className="text-brand-cyan font-medium capitalize">{breakdown.job_family}</span>
+          </p>
         )}
       </div>
 
-      {/* Breakdown bars */}
-      {breakdown.keyword_match != null && (
+      {/* Why It Matches explanation */}
+      {breakdown.why_it_matches && (
+        <div className="glass-card p-4 border-l-2 border-brand-cyan/50">
+          <div className="flex items-start gap-2">
+            <Target className="w-4 h-4 text-brand-cyan shrink-0 mt-0.5" />
+            <div>
+              <h4 className="text-text-primary font-semibold text-sm mb-1">Why It Matches</h4>
+              <p className="text-text-secondary text-xs leading-relaxed">{breakdown.why_it_matches}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Breakdown bars — all 6 dimensions */}
+      {hasBreakdown && (
         <div className="glass-card p-4 space-y-3">
           <h4 className="text-text-primary font-semibold text-sm">Score Breakdown</h4>
-          <ScoreBar label="Keyword Match"    value={breakdown.keyword_match    || 0} color={barColor} />
-          <ScoreBar label="Skill Match"      value={breakdown.skill_match      || 0} color={barColor} />
-          <ScoreBar label="Experience Match" value={breakdown.experience_match || 0} color={barColor} />
-          <ScoreBar label="Salary Alignment" value={breakdown.salary_match     || 0} color={barColor} />
-          <ScoreBar label="Title Match"      value={breakdown.title_match      || 0} color={barColor} />
+          <ScoreBar label="Role Match"          value={breakdown.role_match          || 0} color={barColor} />
+          <ScoreBar label="Skill Match"         value={breakdown.skill_match         || 0} color={barColor} />
+          <ScoreBar label="Experience Match"    value={breakdown.experience_match    || 0} color={barColor} />
+          <ScoreBar label="Industry Match"      value={breakdown.industry_match      || 0} color={barColor} />
+          <ScoreBar label="Certification Match" value={breakdown.certification_match || 0} color={barColor} />
+          <ScoreBar label="Progression Match"   value={breakdown.progression_match   || 0} color={barColor} />
+          {breakdown.salary_match > 0 && (
+            <ScoreBar label="Salary Alignment"  value={breakdown.salary_match        || 0} color={barColor} />
+          )}
         </div>
       )}
 
       {/* Matched skills */}
       {breakdown.matched_skills?.length > 0 && (
         <div className="glass-card p-4">
-          <h4 className="text-text-primary font-semibold text-sm mb-3">Skills You Have</h4>
+          <h4 className="text-text-primary font-semibold text-sm mb-3">Skills You Have ✓</h4>
           <div className="flex flex-wrap gap-2">
             {breakdown.matched_skills.map((s) => <SkillTag key={s} skill={s} present />)}
           </div>
@@ -261,6 +290,13 @@ export default function JobDetailDrawer({ job, onClose }) {
     onMutate:   (saved) => { toggleSaved(job.id); updateJob(job.id, { user_feedback: saved ? 'saved' : null }); },
   });
 
+  // Tailor the primary CV to this job, then open it in CV Studio's editor
+  const navigate = useNavigate();
+  const tailorMut = useMutation({
+    mutationFn: () => createCVRewrite({ jobId: job.id }),
+    onSuccess:  (res) => navigate(`/cv?rewrite=${res.rewrite.id}`),
+  });
+
   const handleApply = () => {
     window.open(job.job_url, '_blank');
     setApplyConfirm(true);
@@ -335,6 +371,21 @@ export default function JobDetailDrawer({ job, onClose }) {
             </motion.div>
           )}
         </AnimatePresence>
+
+        <button
+          onClick={() => tailorMut.mutate()}
+          disabled={tailorMut.isPending}
+          className="w-full mt-2 py-2.5 rounded-xl border border-brand-cyan/30 bg-brand-cyan/10 hover:bg-brand-cyan/20 text-brand-cyan text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60"
+        >
+          {tailorMut.isPending
+            ? <><Loader2 className="w-4 h-4 animate-spin" /> Tailoring your CV… (~15s)</>
+            : <><Sparkles className="w-4 h-4" /> Tailor my CV for this job</>}
+        </button>
+        {tailorMut.isError && (
+          <p className="text-red-400 text-xs mt-1.5 text-center">
+            {tailorMut.error?.response?.data?.error || 'Could not tailor your CV. Please try again.'}
+          </p>
+        )}
       </div>
 
       {/* Tabs */}

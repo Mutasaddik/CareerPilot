@@ -1,11 +1,11 @@
 // ════════════════════════════════════════════════════════════════
 // Job Matching Service
 // Scores each job against user's CV + profile (0–100%)
-// Keyword 35% · Skill 30% · Experience 20% · Salary 10% · Title 5%
+// Role 40% · Skill 25% · Experience 15% · Industry 10% · Cert 5% · Progression 5%
 // ════════════════════════════════════════════════════════════════
 import { query } from '../models/db.js';
-import { getCache, setCache } from '../models/redis.js';
-import { extractSkillsFromText, detectRoleFromCV, getCuratedPack } from './taxonomyService.js';
+import { getCache, setCache, deleteCachePattern } from '../models/redis.js';
+import { extractSkillsFromText, detectRoleFromCV, getCuratedPack, getCuratedPacksRaw } from './taxonomyService.js';
 import logger from './loggerService.js';
 
 const norm       = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -56,49 +56,64 @@ const getUserContext = async (userId) => {
   }
 };
 
+// Related families that share a track (QA ↔ software is adjacent, not equal)
+const RELATED = {
+  'qa engineer':            [],
+  'software engineer':      ['frontend developer','backend developer','full stack developer','qa engineer','devops engineer'],
+  'frontend developer':     ['software engineer','full stack developer'],
+  'backend developer':      ['software engineer','full stack developer'],
+  'full stack developer':   ['software engineer','frontend developer','backend developer'],
+  'devops engineer':        ['software engineer','backend developer'],
+  'mobile developer':       ['software engineer','frontend developer'],
+  'business analyst':       ['data analyst','project manager'],
+  'data analyst':           ['business analyst'],
+  'marketing specialist':   ['sales executive','content writer'],
+  'sales executive':        ['marketing specialist','customer service'],
+  'customer service':       ['sales executive'],
+  'merchandiser':           [],
+  'hr executive':           [],
+  'accountant':             [],
+  'graphic designer':       ['content writer'],
+  'content writer':         ['marketing specialist','graphic designer'],
+  'project manager':        ['business analyst'],
+  'management trainee':     [],
+  'event coordinator':      ['marketing specialist'],
+};
+
+
+const DOMAIN_CHECK_MIN_CHARS = 400;
+
+// ── Per-user data that doesn't depend on the job ─────────────────
+// Computed once per recalculation, not once per job — detectRoleFromCV and
+// extractSkillsFromText scan the whole taxonomy and are far too slow to repeat.
+export const buildUserProfile = (userCtx) => {
+  const cvText     = norm(userCtx.extracted_text || '');
+  const cvSkills   = extractSkillsFromText(cvText);
+  const profSkills = (userCtx.skills || []).map(norm);
+  const cvYears    = parseFloat(userCtx.experience_years) || 0;
+  const targetRole = (userCtx.target_roles?.[0] || userCtx.current_title || '').toLowerCase();
+  const effectiveTarget = targetRole || detectRoleFromCV(userCtx.extracted_text || '')?.title || '';
+  const userPack   = getCuratedPack(effectiveTarget);
+  return {
+    cvText, cvSkills, cvYears, userPack,
+    userFamily:    userPack ? userPack.role_name : null,
+    allUserSkills: [...new Set([...cvSkills.map(norm), ...profSkills])],
+    // The track's own vocabulary — proves a job ad is really in the user's field
+    domainTerms:   userPack ? [...new Set([...(userPack.keywords || []), ...(userPack.tools || [])].map(norm))] : [],
+    hasCerts:      /certif|istqb|aws certified|pmp|cfa/i.test(cvText),
+    userSenior:    cvYears >= 4 || /senior/i.test(cvText.slice(0, 600)),
+  };
+};
+
 // ── Score a single job ────────────────────────────────────────────
-export const scoreJob = (job, userCtx) => {
+export const scoreJob = (job, userCtx, profile = buildUserProfile(userCtx)) => {
   const jdText   = norm(`${job.title} ${job.description || ''}`);
   const jobTitle = norm(job.title);
-  const cvText   = norm(userCtx.extracted_text || '');
-  const cvSkills = extractSkillsFromText(cvText);
-  const profSkills = (userCtx.skills || []).map(norm);
-  const cvYears  = parseFloat(userCtx.experience_years) || 0;
-
-  // ── Step 1: Candidate role family ────────────────────────────────
-  const targetRole = (userCtx.target_roles?.[0] || userCtx.current_title || '').toLowerCase();
-  const cvDetected = detectRoleFromCV(userCtx.extracted_text || '');
-  const effectiveTarget = targetRole || cvDetected?.title || '';
-  const userPack = getCuratedPack(effectiveTarget);
-  const userFamily = userPack ? userPack.role_name : null;
+  const { cvSkills, cvYears, userPack, userFamily, allUserSkills } = profile;
 
   // ── Step 2: Job role family (classify from JOB title) ────────────
   const jobPack = getCuratedPack(jobTitle);
   const jobFamily = jobPack ? jobPack.role_name : null;
-
-  // Related families that share a track (QA ↔ software is adjacent, not equal)
-  const RELATED = {
-    'qa engineer':            ['software engineer'],
-    'software engineer':      ['frontend developer','backend developer','full stack developer','qa engineer','devops engineer'],
-    'frontend developer':     ['software engineer','full stack developer'],
-    'backend developer':      ['software engineer','full stack developer'],
-    'full stack developer':   ['software engineer','frontend developer','backend developer'],
-    'devops engineer':        ['software engineer','backend developer'],
-    'mobile developer':       ['software engineer','frontend developer'],
-    'business analyst':       ['data analyst','project manager'],
-    'data analyst':           ['business analyst'],
-    'marketing specialist':   ['sales executive','content writer'],
-    'sales executive':        ['marketing specialist','customer service'],
-    'customer service':       ['sales executive'],
-    'merchandiser':           [],
-    'hr executive':           [],
-    'accountant':             [],
-    'graphic designer':       ['content writer'],
-    'content writer':         ['marketing specialist','graphic designer'],
-    'project manager':        ['business analyst'],
-    'management trainee':     [],
-    'event coordinator':      ['marketing specialist'],
-  };
 
   // ── Step 3: Family gate (YOUR RULE: never cross career tracks) ───
   let familyStatus = 'unknown';
@@ -113,15 +128,34 @@ export const scoreJob = (job, userCtx) => {
     familyStatus = hits >= 3 ? 'related' : hits >= 1 ? 'weak' : 'different';
   }
 
+  // A matching title isn't enough: "QA" in a garments ad or "Automation
+  // Engineer" at a steel plant is a different career. If the ad is long enough
+  // to judge, it must use the user's field vocabulary to count as same/related.
+  if ((familyStatus === 'same' || familyStatus === 'related') && jdText.length >= DOMAIN_CHECK_MIN_CHARS) {
+    const domainHits = profile.domainTerms.filter((t) => hasTerm(jdText, t)).length;
+    if (domainHits === 0)     familyStatus = 'different';
+    else if (domainHits < 2)  familyStatus = 'weak';
+  }
+
   // Cross-track → hard reject (scores far below the 70% bar)
   if (familyStatus === 'different') {
     return {
-      score: Math.min(20 + cvSkills.filter((s) => hasTerm(jdText, s)).length * 2, 30),
-      breakdown: { role_family: 'mismatch', user_family: userFamily, job_family: jobFamily || 'unclassified' },
-      matched_skills: [],
-      missing_skills: [],
-      required_years: 0,
+      score:               Math.min(20 + cvSkills.filter((s) => hasTerm(jdText, s)).length * 2, 30),
+      role_match:          0,
+      skill_match:         0,
+      experience_match:    0,
+      industry_match:      0,
+      certification_match: 0,
+      progression_match:   0,
+      salary_match:        0,
+      role_family:         'mismatch',
+      user_family:         userFamily,
+      job_family:          jobFamily || 'unclassified',
+      matched_skills:      [],
+      missing_skills:      [],
+      required_years:      0,
       success_probability: 5,
+      why_it_matches:      `Cross-track mismatch: your profile (${userFamily || 'unknown'}) does not align with this job (${jobFamily || 'unclassified'}).`,
     };
   }
 
@@ -130,15 +164,13 @@ export const scoreJob = (job, userCtx) => {
   const roleScore = familyStatus === 'same' ? 40 : familyStatus === 'related' ? 24 : familyStatus === 'weak' ? 12 : 18;
 
   // Skill Match 25 — user's actual skills present in the JD
-  const allUserSkills = [...new Set([...cvSkills.map(norm), ...profSkills])];
-  const skillsInJD = allUserSkills.filter((s) => hasTerm(jdText, s));
-  const jdSkills   = extractSkillsFromText(jdText);
+  const skillsInJD   = allUserSkills.filter((s) => hasTerm(jdText, s));
+  const jdSkills     = extractSkillsFromText(jdText);
   let skillScore;
   if (jdSkills.length >= 3) {
     skillScore = Math.min((skillsInJD.length / Math.max(jdSkills.length * 0.5, 2)) * 25, 25);
   } else {
     // Sparse JD — don't punish the candidate for a short job ad.
-    // Same family implies skill alignment; use a neutral-high floor.
     skillScore = familyStatus === 'same' ? 17 : 10;
     skillScore = Math.max(skillScore, Math.min((skillsInJD.length / 4) * 25, 25));
   }
@@ -161,12 +193,25 @@ export const scoreJob = (job, userCtx) => {
   }
 
   // Certification 5
-  const certScore = /certif|istqb|aws certified|pmp|cfa/i.test(cvText) && /certif/i.test(jdText) ? 5 : 2;
+  const certScore = profile.hasCerts && /certif/i.test(jdText) ? 5 : 2;
 
   // Progression 5 — seniority alignment
-  const jobSenior = /senior|sr\.|lead|principal/i.test(jobTitle);
-  const userSenior = cvYears >= 4 || /senior/i.test(cvText.slice(0, 600));
-  const progScore = jobSenior === userSenior ? 5 : 2;
+  const jobSenior  = /senior|sr\.|lead|principal/i.test(jobTitle);
+  const progScore  = jobSenior === profile.userSenior ? 5 : 2;
+
+  // Salary alignment — not weighted in score but reported separately
+  let salaryMatchPct = 50; // neutral when no data
+  const userSalaryMin = parseFloat(userCtx.salary_min_bdt) || 0;
+  const userSalaryMax = parseFloat(userCtx.salary_max_bdt) || 0;
+  const jobSalaryMin  = parseFloat(job.salary_min_bdt) || 0;
+  const jobSalaryMax  = parseFloat(job.salary_max_bdt) || 0;
+  if (userSalaryMin > 0 && jobSalaryMin > 0) {
+    const effectiveJobMax  = jobSalaryMax  || jobSalaryMin * 1.3;
+    const effectiveUserMax = userSalaryMax || userSalaryMin * 1.5;
+    const overlapMin = Math.max(userSalaryMin, jobSalaryMin);
+    const overlapMax = Math.min(effectiveUserMax, effectiveJobMax);
+    salaryMatchPct = overlapMin <= overlapMax ? 100 : (jobSalaryMin >= userSalaryMin * 0.8 ? 60 : 20);
+  }
 
   let total = Math.round(Math.min(roleScore + skillScore + expScore + industryScore + certScore + progScore, 100));
   if (familyStatus === 'weak')    total = Math.min(total, 65);
@@ -174,25 +219,56 @@ export const scoreJob = (job, userCtx) => {
 
   const missingSkills = jdSkills.filter((s) => !allUserSkills.some((u) => norm(u) === norm(s)));
 
+  // ── Why It Matches — human-readable explanation ───────────────────
+  const whyParts = [];
+  if (familyStatus === 'same') {
+    whyParts.push(`Direct role match: this job (${jobFamily}) aligns with your CV profile as a ${userFamily}`);
+  } else if (familyStatus === 'related') {
+    whyParts.push(`Adjacent role: ${jobFamily} is closely related to your background in ${userFamily}`);
+  } else if (familyStatus === 'weak') {
+    whyParts.push(`Partial match: some keywords from your profile appear in this job description`);
+  }
+  if (skillsInJD.length > 0) {
+    whyParts.push(`${skillsInJD.length} skill${skillsInJD.length > 1 ? 's' : ''} from your CV found in job ad: ${skillsInJD.slice(0, 5).join(', ')}`);
+  }
+  if (reqYears > 0 && cvYears > 0) {
+    whyParts.push(`Experience: job requires ${reqYears}+ years; your CV shows ~${cvYears} year${cvYears !== 1 ? 's' : ''}`);
+  } else if (cvYears > 0) {
+    whyParts.push(`You have ~${cvYears} year${cvYears !== 1 ? 's' : ''} of experience in this field`);
+  }
+  if (certScore === 5) {
+    whyParts.push('Your certifications are relevant to this role\'s requirements');
+  }
+  const whyItMatches = whyParts.length > 0
+    ? whyParts.join('. ') + '.'
+    : 'Profile and job description share common keywords and role context.';
+
+  // ── FLAT return structure — matches exactly what JobDetailDrawer.jsx reads ──
   return {
-    score: total,
-    breakdown: {
-      role_match:       Math.round((roleScore / 40) * 100),
-      skill_match:      Math.round((skillScore / 25) * 100),
-      experience_match: Math.round((expScore / 15) * 100),
-      industry_match:   Math.round((industryScore / 10) * 100),
-      certification_match: Math.round((certScore / 5) * 100),
-      progression_match:   Math.round((progScore / 5) * 100),
-      user_family: userFamily, job_family: jobFamily || 'unclassified',
-    },
-    matched_skills: skillsInJD,
-    missing_skills: missingSkills.slice(0, 10),
-    required_years: reqYears,
+    score:               total,
+    role_match:          Math.round((roleScore / 40) * 100),
+    skill_match:         Math.round((skillScore / 25) * 100),
+    experience_match:    Math.round((expScore / 15) * 100),
+    industry_match:      Math.round((industryScore / 10) * 100),
+    certification_match: Math.round((certScore / 5) * 100),
+    progression_match:   Math.round((progScore / 5) * 100),
+    salary_match:        salaryMatchPct,
+    role_family:         familyStatus,
+    user_family:         userFamily,
+    job_family:          jobFamily || 'unclassified',
+    matched_skills:      skillsInJD,
+    missing_skills:      missingSkills.slice(0, 10),
+    required_years:      reqYears,
     success_probability: Math.round(total * 0.85),
+    why_it_matches:      whyItMatches,
   };
 };
 
 // ── Recalculate matches for a user ───────────────────────────────
+const RECALC_JOB_LIMIT = 3000;
+const INSERT_CHUNK     = 500;
+const yieldToEventLoop = () => new Promise((r) => setImmediate(r));
+
 export const recalculateUserMatches = async (userId) => {
   try {
     const userCtx = await getUserContext(userId);
@@ -201,40 +277,75 @@ export const recalculateUserMatches = async (userId) => {
       return 0;
     }
 
-    // Get recent non-expired jobs
     const jobs = await query(
-      `SELECT * FROM jobs WHERE is_expired = FALSE ORDER BY scraped_at DESC LIMIT 500`
+      `SELECT id, title, description, salary_min_bdt, salary_max_bdt
+       FROM jobs WHERE is_expired = FALSE ORDER BY scraped_at DESC LIMIT $1`,
+      [RECALC_JOB_LIMIT]
     );
+    if (jobs.rows.length === 0) return 0;
 
-    let count = 0;
-    for (const job of jobs.rows) {
-      const match = scoreJob(job, userCtx);
+    const profile = buildUserProfile(userCtx);
 
+    // Score and insert in chunks, yielding between them so API requests
+    // keep being served while a large recalculation runs.
+    for (let start = 0; start < jobs.rows.length; start += INSERT_CHUNK) {
+      const chunk  = jobs.rows.slice(start, start + INSERT_CHUNK);
+      const values = [];
+      const params = [userId]; // $1 is userId
+      let paramIndex = 2;
+      for (const job of chunk) {
+        const match = scoreJob(job, userCtx, profile);
+        params.push(job.id, match.score, JSON.stringify(match));
+        values.push(`($1, $${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, FALSE, FALSE)`);
+        paramIndex += 3;
+      }
       await query(
         `INSERT INTO job_matches (user_id, job_id, relevance_score, match_breakdown_json, alerted, seen)
-         VALUES ($1, $2, $3, $4, FALSE, FALSE)
+         VALUES ${values.join(', ')}
          ON CONFLICT (user_id, job_id) DO UPDATE SET
-           relevance_score     = $3,
-           match_breakdown_json = $4`,
-        [userId, job.id, match.score, JSON.stringify(match)]
+           relevance_score      = EXCLUDED.relevance_score,
+           match_breakdown_json = EXCLUDED.match_breakdown_json`,
+        params
       );
-      count++;
+      await yieldToEventLoop();
     }
 
-    logger.info('Matches recalculated', { userId, jobsScored: count });
-    return count;
+    logger.info('Matches recalculated', { userId, jobsScored: jobs.rows.length });
+    await deleteCachePattern(`matches:${userId}:*`);
+    return jobs.rows.length;
   } catch (err) {
     logger.error('recalculateUserMatches failed', { error: err.message, userId });
     return 0;
   }
 };
 
+// ── Recalculate matches for every user who has a CV ──────────────
+// Run after each job sync so new jobs reach users without any action.
+export const recalculateAllUsers = async () => {
+  const users = await query(`SELECT DISTINCT user_id FROM cvs WHERE is_primary = TRUE`);
+  let done = 0;
+  for (const { user_id } of users.rows) {
+    if (await recalculateUserMatches(user_id)) done++;
+  }
+  logger.info('All-user match recalculation complete', { users: users.rows.length, recalculated: done });
+  return done;
+};
+
 // ── Get matched jobs for user (paginated) ─────────────────────────
-export const getMatchedJobsForUser = async (userId, { limit = 20, offset = 0, minScore = 0, search = '' } = {}) => {
+export const getMatchedJobsForUser = async (userId, { limit = 20, offset = 0, minScore = 70, search = '' } = {}) => {
   try {
     const cacheKey = `matches:${userId}:${limit}:${offset}:${minScore}:${search}`;
     const cached   = await getCache(cacheKey);
     if (cached) return JSON.parse(cached);
+
+    const where = `jm.user_id = $1
+         AND jm.relevance_score >= $2
+         AND j.is_expired = FALSE
+         ${search ? `AND (j.title ILIKE $3 OR j.company ILIKE $3)` : ''}`;
+    const filterParams = search
+      ? [userId, minScore, `%${search.replace(/[\\%_]/g, '\\$&')}%`]
+      : [userId, minScore];
+    const n = filterParams.length;
 
     const result = await query(
       `SELECT
@@ -246,22 +357,17 @@ export const getMatchedJobsForUser = async (userId, { limit = 20, offset = 0, mi
          jm.user_feedback
        FROM jobs j
        JOIN job_matches jm ON jm.job_id = j.id
-       WHERE jm.user_id = $1
-         AND jm.relevance_score >= $2
-         AND j.is_expired = FALSE
-         ${search ? `AND (LOWER(j.title) LIKE LOWER($4) OR LOWER(j.company) LIKE LOWER($4))` : ''}
+       WHERE ${where}
        ORDER BY jm.relevance_score DESC, j.scraped_at DESC
-       LIMIT $3 OFFSET ${offset}`,
-      search
-        ? [userId, minScore, limit, `%${search}%`]
-        : [userId, minScore, limit]
+       LIMIT $${n + 1} OFFSET $${n + 2}`,
+      [...filterParams, limit, Math.max(offset, 0)]
     );
 
     const total = await query(
       `SELECT COUNT(*) FROM jobs j
        JOIN job_matches jm ON jm.job_id = j.id
-       WHERE jm.user_id = $1 AND jm.relevance_score >= $2 AND j.is_expired = FALSE`,
-      [userId, minScore]
+       WHERE ${where}`,
+      filterParams
     );
 
     const data = { jobs: result.rows, total: parseInt(total.rows[0].count), limit, offset };

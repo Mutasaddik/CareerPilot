@@ -1,10 +1,7 @@
-// ════════════════════════════════════════════════════════════════
-// Jobs Routes — /api/v1/jobs
-// ════════════════════════════════════════════════════════════════
 import express from 'express';
-import { requireAuth } from '../middleware/authMiddleware.js';
-import { getMatchedJobsForUser, scoreJob, recalculateUserMatches } from '../services/matchingService.js';
-import { triggerManualScrape } from '../queue/scraperQueue.js';
+import { requireAuth, requireAdmin } from '../middleware/authMiddleware.js';
+import { getMatchedJobsForUser, recalculateUserMatches } from '../services/matchingService.js';
+import { runJobSync, refreshJobsForUser } from '../services/jobSyncService.js';
 import { query } from '../models/db.js';
 import { getCache, setCache } from '../models/redis.js';
 import logger from '../services/loggerService.js';
@@ -20,17 +17,6 @@ router.get('/', async (req, res) => {
     const offset   = parseInt(req.query.offset) || 0;
     const minScore = parseInt(req.query.minScore) || 0;
     const search   = req.query.search || '';
-
-    // If user has no matches yet, trigger recalculation in background
-    const existing = await query(
-      `SELECT COUNT(*) FROM job_matches WHERE user_id = $1`, [userId]
-    );
-    if (parseInt(existing.rows[0].count) === 0) {
-      // Don't await — run in background so page loads immediately
-      recalculateUserMatches(userId).catch((err) =>
-        logger.error('Background recalculate failed', { error: err.message })
-      );
-    }
 
     const data = await getMatchedJobsForUser(userId, { limit, offset, minScore, search });
     res.json({ success: true, ...data });
@@ -64,6 +50,73 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+// ── POST /jobs/regenerate — user-facing manual rematch with rate limit ──
+router.post('/regenerate', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const today  = new Date().toISOString().slice(0, 10);
+    const rateKey = `regen:${userId}:${today}`;
+
+    const limitRaw = await getCache('config:regen_daily_limit');
+    const dailyLimit = limitRaw ? parseInt(limitRaw) : 5;
+
+    const countRaw = await getCache(rateKey);
+    const usedCount = countRaw ? parseInt(countRaw) : 0;
+    if (usedCount >= dailyLimit) {
+      return res.status(429).json({
+        success: false,
+        error: `Daily regeneration limit reached (${dailyLimit}/day). Try again tomorrow.`,
+        used: usedCount,
+        limit: dailyLimit,
+      });
+    }
+
+    const now          = new Date();
+    const midnight     = new Date(now);
+    midnight.setHours(24, 0, 0, 0);
+    const secondsLeft  = Math.floor((midnight - now) / 1000);
+    await setCache(rateKey, String(usedCount + 1), secondsLeft);
+
+    // Fire-and-forget: search the sources for this user's roles, then rematch.
+    // recalculateUserMatches clears the user's match cache when it finishes.
+    refreshJobsForUser(userId).catch((err) =>
+      logger.error('Regenerate refresh failed', { error: err.message, userId })
+    );
+
+    res.json({
+      success:   true,
+      message:   'Job search refreshed! New matches will appear shortly.',
+      used:      usedCount + 1,
+      limit:     dailyLimit,
+      remaining: dailyLimit - usedCount - 1,
+    });
+  } catch (err) {
+    logger.error('POST /jobs/regenerate error', { error: err.message });
+    res.status(500).json({ success: false, error: 'Failed to trigger regeneration.' });
+  }
+});
+
+// ── GET /jobs/regenerate/status — how many regenerations left today ──
+router.get('/regenerate/status', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const today  = new Date().toISOString().slice(0, 10);
+    const rateKey = `regen:${userId}:${today}`;
+    const limitRaw = await getCache('config:regen_daily_limit');
+    const dailyLimit = limitRaw ? parseInt(limitRaw) : 5;
+    const countRaw = await getCache(rateKey);
+    const usedCount = countRaw ? parseInt(countRaw) : 0;
+    res.json({
+      success: true,
+      used: usedCount,
+      limit: dailyLimit,
+      remaining: Math.max(0, dailyLimit - usedCount),
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to fetch regen status.' });
+  }
+});
+
 // ── GET /jobs/:id — single job with match details ─────────────────
 router.get('/:id', async (req, res) => {
   try {
@@ -77,7 +130,6 @@ router.get('/:id', async (req, res) => {
     );
     if (!result.rows[0]) return res.status(404).json({ success: false, error: 'Job not found.' });
 
-    // Mark as seen
     await query(
       `UPDATE job_matches SET seen = TRUE WHERE job_id = $1 AND user_id = $2`,
       [req.params.id, userId]
@@ -92,7 +144,7 @@ router.get('/:id', async (req, res) => {
 // ── POST /jobs/:id/feedback — thumbs up/down ─────────────────────
 router.post('/:id/feedback', async (req, res) => {
   try {
-    const { feedback_type } = req.body; // 'positive' | 'negative'
+    const { feedback_type } = req.body;
     if (!['positive', 'negative'].includes(feedback_type)) {
       return res.status(400).json({ success: false, error: 'Invalid feedback type.' });
     }
@@ -100,7 +152,6 @@ router.post('/:id/feedback', async (req, res) => {
       `UPDATE job_matches SET user_feedback = $1 WHERE job_id = $2 AND user_id = $3`,
       [feedback_type, req.params.id, req.user.id]
     );
-    // Also log to job_feedback table
     await query(
       `INSERT INTO job_feedback (user_id, job_id, feedback_type)
        VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
@@ -115,7 +166,7 @@ router.post('/:id/feedback', async (req, res) => {
 // ── POST /jobs/:id/save — bookmark a job ─────────────────────────
 router.post('/:id/save', async (req, res) => {
   try {
-    const { saved } = req.body; // boolean
+    const { saved } = req.body;
     await query(
       `UPDATE job_matches SET user_feedback = $1 WHERE job_id = $2 AND user_id = $3`,
       [saved ? 'saved' : null, req.params.id, req.user.id]
@@ -136,45 +187,11 @@ router.post('/recalculate', async (req, res) => {
   }
 });
 
-// ── POST /jobs/run-scrape — direct scrape bypassing queue ────────
-router.post('/run-scrape', async (req, res) => {
-  try {
-    const { scrapeAllSources } = await import('../services/scraperService.js');
-    const { deduplicateInMemory, upsertJobs } = await import('../services/deduplicationService.js');
-    const { logScraperRun } = await import('../services/scraperHealthService.js');
-
-    const keywords = req.body.keywords || ['software engineer', 'QA engineer', 'frontend developer', 'backend developer', 'data analyst', 'devops engineer', 'business analyst', 'marketing executive'];
-    const startedAt = new Date();
-
-    // Run in background, respond immediately
-    res.json({ success: true, message: 'Scrape started in background', keywords: keywords.length });
-
-    // Background execution
-    (async () => {
-      try {
-        const raw     = await scrapeAllSources(keywords);
-        const deduped = deduplicateInMemory(raw);
-        const result  = await upsertJobs(deduped);
-        await logScraperRun({ source: 'all', startedAt, finishedAt: new Date(), jobsFound: result.inserted + result.updated, status: 'success' });
-        console.log('Direct scrape complete:', result);
-      } catch (err) {
-        await logScraperRun({ source: 'all', startedAt, finishedAt: new Date(), jobsFound: 0, status: 'failed', errorMessage: err.message });
-        console.error('Direct scrape failed:', err.message);
-      }
-    })();
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ── POST /jobs/trigger-scrape — manual scrape (admin) ────────────
-router.post('/trigger-scrape', async (req, res) => {
-  try {
-    const jobId = await triggerManualScrape();
-    res.json({ success: true, queue_job_id: jobId });
-  } catch (err) {
-    res.status(500).json({ success: false, error: 'Failed to trigger scrape.' });
-  }
+// ── POST /jobs/run-scrape — full job sync now (admin) ────────────
+router.post(['/run-scrape', '/trigger-scrape'], requireAdmin, (req, res) => {
+  const keywords = Array.isArray(req.body?.keywords) ? req.body.keywords.slice(0, 40) : undefined;
+  runJobSync({ keywords }).catch((err) => logger.error('Manual job sync failed', { error: err.message }));
+  res.json({ success: true, message: 'Job sync started in background.' });
 });
 
 export default router;

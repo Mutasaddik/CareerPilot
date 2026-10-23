@@ -30,8 +30,13 @@ export const getCache = async (key) => {
 
 export const setCache = async (key, value, ttlSeconds) => {
   try {
-    const ttl = Math.max(Math.floor(ttlSeconds), 1); // already in seconds
-    await redis.set(key, JSON.stringify(value), 'EX', ttl);
+    if (!ttlSeconds || ttlSeconds <= 0) {
+      // No expiry — persist until explicitly deleted (used for config values)
+      await redis.set(key, JSON.stringify(value));
+    } else {
+      const ttl = Math.max(Math.floor(ttlSeconds), 1);
+      await redis.set(key, JSON.stringify(value), 'EX', ttl);
+    }
   } catch (err) {
     logger.error('Cache set error', { key, error: err.message });
   }

@@ -1,17 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
   Users, Shield, Activity, Zap, Settings,
   ToggleLeft, ToggleRight, Wrench, Search,
-  AlertTriangle, CheckCircle, LogOut,
-  Ban, Trash2, RefreshCw
+  AlertTriangle, CheckCircle, Clock, LogOut,
+  ChevronRight, Eye, Ban, Trash2, RefreshCw
 } from 'lucide-react';
 import {
   getSuperAdminStats, getSuperAdminUsers, getSuperAdminFlags,
   getMaintenance, setMaintenance, updateFeatureFlag,
-  superAdminSuspendUser, superAdminUnsuspendUser, superAdminDeleteUser,
-  createAdminUser, deactivateAdmin,
+  superAdminSuspendUser as suspendUser, superAdminUnsuspendUser as unsuspendUser, superAdminDeleteUser as deleteUser,
   getSuperAdminAuditLogs, getSuperAdminScrapers,
 } from '../../api/adminApi.js';
 import { logoutUser } from '../../api/authApi.js';
@@ -39,32 +38,76 @@ const StatCard = ({ label, value, icon: Icon, color }) => (
 const TABS = ['Overview', 'Users', 'Feature Flags', 'Maintenance', 'Scrapers', 'Audit Logs'];
 
 export default function SuperAdminDashboard() {
-  const navigate    = useNavigate();
-  const queryClient = useQueryClient();
-  const clearUser   = useAuthStore((s) => s.clearUser);
-  const user        = useAuthStore((s) => s.user);
-  const [tab,      setTab]      = useState('Overview');
-  const [search,   setSearch]   = useState('');
-  const [maintMsg, setMaintMsg] = useState('');
+  const navigate     = useNavigate();
+  const queryClient  = useQueryClient();
+  const clearUser    = useAuthStore((s) => s.clearUser);
+  const user         = useAuthStore((s) => s.user);
+  const [tab,        setTab]        = useState('Overview');
+  const [search,     setSearch]     = useState('');
+  const [maintMsg,   setMaintMsg]   = useState('');
 
-  const { data: statsData }    = useQuery({ queryKey: ['sa-stats'],           queryFn: getSuperAdminStats,                              staleTime: 30000 });
-  const { data: usersData }    = useQuery({ queryKey: ['sa-users', search],   queryFn: () => getSuperAdminUsers({ search, limit: 20 }), staleTime: 30000 });
-  const { data: flagsData }    = useQuery({ queryKey: ['sa-flags'],           queryFn: getSuperAdminFlags,                              staleTime: 60000 });
-  const { data: maintData }    = useQuery({ queryKey: ['sa-maint'],           queryFn: getMaintenance,                                  staleTime: 30000 });
-  const { data: scrapersData } = useQuery({ queryKey: ['sa-scrapers'],        queryFn: getSuperAdminScrapers,                           staleTime: 30000 });
-  const { data: auditData }    = useQuery({ queryKey: ['sa-audit'],           queryFn: () => getSuperAdminAuditLogs({ limit: 30 }),     staleTime: 30000 });
+  const { data: statsData }   = useQuery({ queryKey: ['sa-stats'],    queryFn: getSuperAdminStats,   staleTime: 30000 });
+  const { data: usersData }   = useQuery({ queryKey: ['sa-users', search], queryFn: () => getSuperAdminUsers({ search, limit: 20 }), staleTime: 30000 });
+  const { data: flagsData }   = useQuery({ queryKey: ['sa-flags'],    queryFn: getSuperAdminFlags,   staleTime: 60000 });
+  const { data: maintData }   = useQuery({ queryKey: ['sa-maint'],    queryFn: getMaintenance,       staleTime: 30000 });
+  const { data: scrapersData }= useQuery({ queryKey: ['sa-scrapers'], queryFn: getSuperAdminScrapers,staleTime: 30000 });
 
-  const maintMutation   = useMutation({ mutationFn: setMaintenance,             onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sa-maint'] }) });
-  const flagMutation    = useMutation({ mutationFn: ({ name, data }) => updateFeatureFlag(name, data), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sa-flags'] }) });
-  const suspendMutation = useMutation({ mutationFn: superAdminSuspendUser,   onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sa-users'] }) });
-  const unsuspendMutation = useMutation({ mutationFn: superAdminUnsuspendUser, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sa-users'] }) });
-  const deleteMutation  = useMutation({ mutationFn: superAdminDeleteUser,    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sa-users'] }) });
-  const logoutMutation  = useMutation({ mutationFn: logoutUser, onSuccess: () => { clearUser(); navigate('/login'); } });
+  // Regen limit config
+  const [regenLimit, setRegenLimit]       = useState(5);
+  const [regenLimitInput, setRegenLimitInput] = useState(5);
+  const [regenLimitSaving, setRegenLimitSaving] = useState(false);
+  const [regenLimitMsg, setRegenLimitMsg] = useState('');
+
+  useEffect(() => {
+    fetch('/api/v1/superadmin/config/regen-limit', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => { if (d.success) { setRegenLimit(d.limit); setRegenLimitInput(d.limit); } })
+      .catch(() => {});
+  }, []);
+
+  const saveRegenLimit = async () => {
+    const val = parseInt(regenLimitInput);
+    if (isNaN(val) || val < 2 || val > 30) { setRegenLimitMsg('Must be between 2 and 30.'); return; }
+    setRegenLimitSaving(true);
+    try {
+      const res = await fetch('/api/v1/superadmin/config/regen-limit', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: val }),
+      });
+      const data = await res.json();
+      if (data.success) { setRegenLimit(val); setRegenLimitMsg(`Saved! Limit set to ${val}/day.`); }
+      else setRegenLimitMsg(data.error || 'Failed to save.');
+    } catch { setRegenLimitMsg('Network error.'); }
+    setRegenLimitSaving(false);
+    setTimeout(() => setRegenLimitMsg(''), 4000);
+  };
+  const { data: auditData }   = useQuery({ queryKey: ['sa-audit'],    queryFn: () => getSuperAdminAuditLogs({ limit: 30 }), staleTime: 30000 });
+
+  const maintMutation = useMutation({
+    mutationFn: setMaintenance,
+    onSuccess: () => queryClient.invalidateQueries(['sa-maint']),
+  });
+
+  const flagMutation = useMutation({
+    mutationFn: ({ name, data }) => updateFeatureFlag(name, data),
+    onSuccess: () => queryClient.invalidateQueries(['sa-flags']),
+  });
+
+  const suspendMutation  = useMutation({ mutationFn: suspendUser,  onSuccess: () => queryClient.invalidateQueries(['sa-users']) });
+  const unsuspendMutation= useMutation({ mutationFn: unsuspendUser,onSuccess: () => queryClient.invalidateQueries(['sa-users']) });
+  const deleteMutation   = useMutation({ mutationFn: deleteUser,   onSuccess: () => queryClient.invalidateQueries(['sa-users']) });
+
+  const logoutMutation = useMutation({
+    mutationFn: logoutUser,
+    onSuccess: () => { clearUser(); navigate('/login'); },
+  });
 
   const stats = statsData?.stats;
 
   return (
     <div className="min-h-screen bg-bg-primary">
+      {/* Top bar */}
       <div className="border-b border-border bg-bg-secondary/80 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -87,31 +130,38 @@ export default function SuperAdminDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+        {/* Page header */}
         <div>
           <h1 className="font-display font-bold text-2xl text-text-primary">SuperAdmin Dashboard</h1>
           <p className="text-text-secondary text-sm mt-1">Full platform control and oversight.</p>
         </div>
 
+        {/* Tabs */}
         <div className="flex gap-1 p-1 bg-bg-secondary rounded-xl w-fit overflow-x-auto">
           {TABS.map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
-                tab === t ? 'bg-superadmin text-white' : 'text-text-secondary hover:text-text-primary'
-              }`}>{t}</button>
+                tab === t
+                  ? 'bg-superadmin text-white shadow-sm'
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}>
+              {t}
+            </button>
           ))}
         </div>
 
-        {/* Overview */}
+        {/* ── Overview ─────────────────────────────────────────── */}
         {tab === 'Overview' && (
-          <motion.div initial="hidden" animate="visible"
-            variants={{ visible: { transition: { staggerChildren: 0.08 } } }}
+          <motion.div initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: 0.08 } } }}
             className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <StatCard label="Total Users"  value={stats?.totalUsers}  icon={Users}    color="#dc2626" />
-              <StatCard label="Active Today" value={stats?.activeToday} icon={Activity} color="#22c55e" />
-              <StatCard label="New Today"    value={stats?.newToday}    icon={Zap}      color="#06b6d4" />
-              <StatCard label="Total Admins" value={stats?.totalAdmins} icon={Shield}   color="#f59e0b" />
+              <StatCard label="Total Users"   value={stats?.totalUsers}  icon={Users}    color="#dc2626" />
+              <StatCard label="Active Today"  value={stats?.activeToday} icon={Activity} color="#22c55e" />
+              <StatCard label="New Today"     value={stats?.newToday}    icon={Zap}      color="#06b6d4" />
+              <StatCard label="Total Admins"  value={stats?.totalAdmins} icon={Shield}   color="#f59e0b" />
             </div>
+
+            {/* Scraper health summary */}
             <div className="glass-card p-6 space-y-4">
               <h2 className="font-semibold text-text-primary flex items-center gap-2">
                 <Activity className="w-4 h-4 text-superadmin" /> Scraper Health
@@ -128,19 +178,22 @@ export default function SuperAdminDashboard() {
                       s.status === 'running' ? 'bg-warning animate-pulse' : 'bg-danger'
                     }`} />
                   </div>
-                )) : <p className="text-text-muted text-sm col-span-3">No scraper runs yet.</p>}
+                )) : (
+                  <p className="text-text-muted text-sm col-span-3">No scraper runs yet.</p>
+                )}
               </div>
             </div>
           </motion.div>
         )}
 
-        {/* Users */}
+        {/* ── Users ────────────────────────────────────────────── */}
         {tab === 'Users' && (
           <div className="space-y-4">
             <div className="relative max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
               <input type="text" placeholder="Search users..." value={search}
-                onChange={(e) => setSearch(e.target.value)} className="input-field pl-10" />
+                onChange={(e) => setSearch(e.target.value)}
+                className="input-field pl-10" />
             </div>
             <div className="glass-card overflow-hidden">
               <table className="w-full">
@@ -161,10 +214,10 @@ export default function SuperAdminDashboard() {
                       </td>
                       <td className="px-4 py-3">
                         <span className={`badge ${
-                          u.admin_role === 'superadmin' ? 'bg-superadmin/15 text-superadmin badge' :
-                          u.admin_role === 'admin'      ? 'bg-admin/15 text-admin badge' :
+                          u.admin_role === 'superadmin' ? 'bg-superadmin/15 text-superadmin' :
+                          u.admin_role === 'admin'      ? 'bg-admin/15 text-admin' :
                           u.admin_role === 'moderator'  ? 'badge-purple' : 'badge-blue'
-                        }`}>{u.admin_role || 'user'}</span>
+                        } badge`}>{u.admin_role || 'user'}</span>
                       </td>
                       <td className="px-4 py-3">
                         {u.is_verified
@@ -174,43 +227,23 @@ export default function SuperAdminDashboard() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           {u.admin_role === 'superadmin' ? (
-                            <span className="text-xs text-text-muted italic px-2">Protected</span>
+                            <span className="text-xs text-text-muted px-2">Protected</span>
+                          ) : u.is_verified ? (
+                            <button onClick={() => suspendMutation.mutate(u.id)}
+                              className="p-1.5 rounded-lg hover:bg-warning/10 text-warning transition-colors" title="Suspend">
+                              <Ban className="w-3.5 h-3.5" />
+                            </button>
                           ) : (
-                            <>
-                              {/* Promote button */}
-                              <select
-                                value={u.admin_role || 'user'}
-                                onChange={(e) => {
-                                  const role = e.target.value;
-                                  if (role === 'user') {
-                                    deactivateAdmin(u.id).then(() => queryClient.invalidateQueries({ queryKey: ['sa-users'] }));
-                                  } else {
-                                    createAdminUser({ userId: u.id, role }).then(() => queryClient.invalidateQueries({ queryKey: ['sa-users'] }));
-                                  }
-                                }}
-                                className="text-xs px-2 py-1.5 rounded-lg bg-bg-primary border border-border text-text-secondary focus:border-brand-purple outline-none">
-                                <option value="user">User</option>
-                                <option value="moderator">Moderator</option>
-                                <option value="admin">Admin</option>
-                              </select>
-                              {u.is_verified ? (
-                                <button onClick={() => suspendMutation.mutate(u.id)}
-                                  className="p-1.5 rounded-lg hover:bg-warning/10 text-warning transition-colors" title="Suspend">
-                                  <Ban className="w-3.5 h-3.5" />
-                                </button>
-                              ) : (
-                                <button onClick={() => unsuspendMutation.mutate(u.id)}
-                                  className="p-1.5 rounded-lg hover:bg-success/10 text-success transition-colors" title="Unsuspend">
-                                  <CheckCircle className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              <button
-                                onClick={() => { if (window.confirm('Permanently delete this user?')) deleteMutation.mutate(u.id); }}
-                                className="p-1.5 rounded-lg hover:bg-danger/10 text-danger transition-colors" title="Delete">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </>
+                            <button onClick={() => unsuspendMutation.mutate(u.id)}
+                              className="p-1.5 rounded-lg hover:bg-success/10 text-success transition-colors" title="Unsuspend">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                            </button>
                           )}
+                          <button
+                            onClick={() => { if (window.confirm('Permanently delete this user?')) deleteMutation.mutate(u.id); }}
+                            className="p-1.5 rounded-lg hover:bg-danger/10 text-danger transition-colors" title="Delete">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -224,7 +257,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* Feature Flags */}
+        {/* ── Feature Flags ─────────────────────────────────────── */}
         {tab === 'Feature Flags' && (
           <div className="glass-card p-6 space-y-4">
             <h2 className="font-semibold text-text-primary flex items-center gap-2">
@@ -264,7 +297,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* Maintenance */}
+        {/* ── Maintenance ───────────────────────────────────────── */}
         {tab === 'Maintenance' && (
           <div className="glass-card p-6 space-y-6 max-w-lg">
             <h2 className="font-semibold text-text-primary flex items-center gap-2">
@@ -274,9 +307,7 @@ export default function SuperAdminDashboard() {
               <div>
                 <p className="text-sm font-semibold text-text-primary">Platform Status</p>
                 <p className="text-xs text-text-muted mt-0.5">
-                  {maintData?.maintenance?.is_enabled
-                    ? '⚠️ Maintenance ON — users see maintenance page'
-                    : '✅ Platform is live'}
+                  {maintData?.maintenance?.is_enabled ? '⚠️ Maintenance mode ON — users see maintenance page' : '✅ Platform is live'}
                 </p>
               </div>
               <button
@@ -290,14 +321,19 @@ export default function SuperAdminDashboard() {
               </button>
             </div>
             <div className="space-y-2">
-              <label className="text-sm text-text-secondary font-medium">Custom message</label>
-              <textarea value={maintMsg} onChange={(e) => setMaintMsg(e.target.value)}
-                placeholder="We'll be back shortly..." rows={3} className="input-field resize-none" />
+              <label className="text-sm text-text-secondary font-medium">Custom maintenance message</label>
+              <textarea
+                value={maintMsg}
+                onChange={(e) => setMaintMsg(e.target.value)}
+                placeholder="We'll be back shortly..."
+                rows={3}
+                className="input-field resize-none"
+              />
             </div>
           </div>
         )}
 
-        {/* Scrapers */}
+        {/* ── Scrapers ──────────────────────────────────────────── */}
         {tab === 'Scrapers' && (
           <div className="glass-card p-6 space-y-4">
             <h2 className="font-semibold text-text-primary flex items-center gap-2">
@@ -314,22 +350,76 @@ export default function SuperAdminDashboard() {
                     }`}>{s.status}</span>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-xs text-text-secondary">
-                    <span>Jobs: <span className="text-text-primary font-medium">{s.jobs_found ?? 0}</span></span>
+                    <span>Jobs found: <span className="text-text-primary font-medium">{s.jobs_found ?? 0}</span></span>
                     <span>Failures: <span className={`font-medium ${s.consecutive_failures > 0 ? 'text-danger' : 'text-text-primary'}`}>{s.consecutive_failures}</span></span>
-                    <span>Last: <span className="text-text-primary font-medium">{s.finished_at ? new Date(s.finished_at).toLocaleTimeString() : 'Never'}</span></span>
+                    <span>Last run: <span className="text-text-primary font-medium">{s.finished_at ? new Date(s.finished_at).toLocaleTimeString() : 'Never'}</span></span>
                   </div>
                   {s.error_message && (
                     <p className="text-xs text-danger bg-danger/10 rounded-lg px-3 py-2">{s.error_message}</p>
                   )}
                 </div>
               )) : (
-                <p className="text-text-muted text-sm text-center py-8">No scraper data yet. Scrapers run in Phase 6.</p>
+                <p className="text-text-muted text-sm text-center py-8">No scraper data yet. Scrapers will run automatically in Phase 6.</p>
               )}
+            </div>
+
+            {/* Force Scrape Button */}
+            <div className="pt-2 border-t border-border mt-2">
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/v1/jobs/trigger-scrape', { method: 'POST', credentials: 'include' });
+                    const data = await res.json();
+                    if (data.success) alert('✅ Force scrape triggered! Jobs will update in the background.');
+                    else alert('❌ Failed: ' + (data.error || 'Unknown error'));
+                  } catch (err) {
+                    alert('❌ Error: ' + err.message);
+                  }
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-superadmin/20 hover:bg-superadmin/30 border border-superadmin/40 text-superadmin font-semibold text-sm flex items-center justify-center gap-2 transition-all"
+              >
+                <span>⚡</span> Force Scrape All Jobs Now
+              </button>
+              <p className="text-text-muted text-xs text-center mt-2">Bypasses the 12-hour schedule. Scrapes all sources immediately in the background.</p>
             </div>
           </div>
         )}
 
-        {/* Audit Logs */}
+
+        {/* ── Regeneration Rate Limit Config ─────────────────────── */}
+        <div className="glass-card p-5 mt-4">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-superadmin font-semibold text-sm">⚡ User Regeneration Limit</span>
+            <span className="text-text-muted text-xs">(how many times a user can click Regenerate per day)</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-text-secondary text-sm">Daily limit:</span>
+              <input
+                type="number"
+                min={2}
+                max={30}
+                value={regenLimitInput}
+                onChange={(e) => setRegenLimitInput(e.target.value)}
+                className="w-20 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-text-primary text-sm focus:outline-none focus:border-superadmin/50 text-center"
+              />
+              <span className="text-text-muted text-xs">times/day (2–30)</span>
+            </div>
+            <button
+              onClick={saveRegenLimit}
+              disabled={regenLimitSaving}
+              className="px-4 py-1.5 rounded-lg bg-superadmin/20 border border-superadmin/30 text-superadmin text-sm font-medium hover:bg-superadmin/30 transition-colors disabled:opacity-50"
+            >
+              {regenLimitSaving ? 'Saving…' : 'Save'}
+            </button>
+            <span className="text-xs font-medium text-green-400">{regenLimitMsg}</span>
+          </div>
+          <p className="text-text-muted text-xs mt-3">
+            Current limit: <span className="text-text-primary font-medium">{regenLimit} regenerations/day</span> per user. Resets at midnight.
+          </p>
+        </div>
+
+        {/* ── Audit Logs ────────────────────────────────────────── */}
         {tab === 'Audit Logs' && (
           <div className="glass-card overflow-hidden">
             <div className="p-4 border-b border-border">
@@ -340,13 +430,13 @@ export default function SuperAdminDashboard() {
                 <thead className="border-b border-border bg-bg-primary/30">
                   <tr>
                     {['Performed By', 'Role', 'Action', 'Target', 'IP', 'Time'].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-text-muted uppercase whitespace-nowrap">{h}</th>
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {auditData?.logs?.map((log) => (
-                    <tr key={log.id} className="hover:bg-bg-primary/20">
+                    <tr key={log.id} className="hover:bg-bg-primary/20 transition-colors">
                       <td className="px-4 py-3 text-sm text-text-primary">{log.performer_name || 'System'}</td>
                       <td className="px-4 py-3">
                         <span className={`badge ${

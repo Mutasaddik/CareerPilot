@@ -56,7 +56,7 @@ export default function OTPVerify() {
       setTimeout(() => {
         if (purpose === 'forgot_password') {
           return navigate('/reset-password', {
-            state: { email },
+            state: { email, resetToken: data.resetToken },
             replace: true,
           });
         }

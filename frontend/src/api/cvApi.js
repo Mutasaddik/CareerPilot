@@ -58,3 +58,30 @@ export const reanalyzeCV = async (cvId) => {
   const response = await api.post(`/cv/${cvId}/analyze`);
   return response.data;
 };
+
+// ── AI-rewritten CVs ──────────────────────────────────────────────
+// General rewrite when jobId is empty; cvId defaults to the primary CV
+export const createCVRewrite = async ({ cvId, jobId } = {}) => {
+  const response = await api.post('/cv/rewrite', { cvId, jobId });
+  return response.data;
+};
+
+export const getCVRewrites = async () => {
+  const response = await api.get('/cv/rewrites');
+  return response.data;
+};
+
+export const getCVRewrite = async (rewriteId) => {
+  const response = await api.get(`/cv/rewrites/${rewriteId}`);
+  return response.data;
+};
+
+export const updateCVRewrite = async (rewriteId, cv) => {
+  const response = await api.put(`/cv/rewrites/${rewriteId}`, { cv });
+  return response.data;
+};
+
+export const deleteCVRewrite = async (rewriteId) => {
+  const response = await api.delete(`/cv/rewrites/${rewriteId}`);
+  return response.data;
+};

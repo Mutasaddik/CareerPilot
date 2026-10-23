@@ -30,13 +30,35 @@ const getUserProfileForScoring = async (userId) => {
   }
 };
 
+export const isGeminiAvailable = () => !!GEMINI_KEY;
+
+// ── Gemini call that must return JSON ─────────────────────────────
+// Model fallback chain — each pulls from a different capacity pool.
+export const generateGeminiJSON = async (prompt) => {
+  if (!GEMINI_KEY) throw new Error('Gemini API key not configured');
+  const { GoogleGenerativeAI } = await import('@google/generative-ai');
+  const genAI = new GoogleGenerativeAI(GEMINI_KEY);
+  const MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.0-flash'];
+  let lastErr = null;
+  for (const modelName of MODELS) {
+    try {
+      const model  = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      const raw    = result.response.text().replace(/```json|```/g, '').trim();
+      return JSON.parse(raw);
+    } catch (err) {
+      lastErr = err;
+      if (!/503|429|overloaded|high demand|quota/i.test(err.message)) throw err; // non-capacity error → don't retry
+      logger.warn(`Gemini model ${modelName} unavailable, trying next`, { error: err.message.slice(0, 100) });
+    }
+  }
+  throw lastErr;
+};
+
 // ── Free AI suggestion enhancement (Gemini) ───────────────────────
 const enhanceWithGemini = async (engineResult, cvText) => {
   if (!GEMINI_KEY) return null;
   try {
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-
     const prompt = `You are an expert ATS Resume Analyzer, Senior Recruiter, and Career Coach with deep knowledge of global hiring practices across all industries.
 
 Analyze this CV deeply. The ATS score is already computed (${engineResult.ats_score}/100 by a deterministic engine) — do NOT provide a score. Your job is the qualitative expert analysis.
@@ -72,22 +94,7 @@ Engine findings for context:
 FULL CV TEXT:
 ${cvText.slice(0, 6000)}`;
 
-    // Model fallback chain — each pulls from a different capacity pool
-    const MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.0-flash'];
-    let lastErr = null;
-    for (const modelName of MODELS) {
-      try {
-        const model  = genAI.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent(prompt);
-        const raw    = result.response.text().replace(/```json|```/g, '').trim();
-        return JSON.parse(raw);
-      } catch (err) {
-        lastErr = err;
-        if (!/503|429|overloaded|high demand|quota/i.test(err.message)) throw err; // non-capacity error → don't retry
-        logger.warn(`Gemini model ${modelName} unavailable, trying next`, { error: err.message.slice(0, 100) });
-      }
-    }
-    throw lastErr;
+    return await generateGeminiJSON(prompt);
   } catch (err) {
     logger.warn('Gemini enhancement failed — using rule-based suggestions', { error: err.message });
     return null;

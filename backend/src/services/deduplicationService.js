@@ -60,15 +60,20 @@ export const upsertJobs = async (jobs) => {
 
   for (const job of jobs) {
     try {
-      // Check if this job already exists in DB
-      const existing = await query(
-        `SELECT id, sources FROM jobs
-         WHERE LOWER(company) = LOWER($1)
-           AND LOWER(title)   = LOWER($2)
-           AND LOWER(location) LIKE LOWER($3)
-         LIMIT 1`,
-        [job.company, job.title, `%${norm(job.location).split(' ')[0]}%`]
-      );
+      // Same posting URL is the same job; otherwise fall back to company + title + city
+      let existing = job.job_url
+        ? await query(`SELECT id, sources FROM jobs WHERE job_url = $1 LIMIT 1`, [job.job_url])
+        : { rows: [] };
+      if (existing.rows.length === 0) {
+        existing = await query(
+          `SELECT id, sources FROM jobs
+           WHERE LOWER(company) = LOWER($1)
+             AND LOWER(title)   = LOWER($2)
+             AND LOWER(location) LIKE LOWER($3)
+           LIMIT 1`,
+          [job.company, job.title, `%${norm(job.location).split(' ')[0]}%`]
+        );
+      }
 
       if (existing.rows.length > 0) {
         // Merge sources and update
@@ -79,9 +84,13 @@ export const upsertJobs = async (jobs) => {
              salary_min_bdt   = COALESCE($2, salary_min_bdt),
              salary_max_bdt   = COALESCE($3, salary_max_bdt),
              company_logo_url = COALESCE($4, company_logo_url),
+             deadline         = COALESCE($5, deadline),
+             description      = CASE WHEN LENGTH(COALESCE($7, '')) > LENGTH(COALESCE(description, ''))
+                                     THEN $7 ELSE description END,
+             is_expired       = FALSE,
              scraped_at       = NOW()
-           WHERE id = $5`,
-          [merged, job.salary_min_bdt, job.salary_max_bdt, job.company_logo_url, existing.rows[0].id]
+           WHERE id = $6`,
+          [merged, job.salary_min_bdt, job.salary_max_bdt, job.company_logo_url, job.deadline, existing.rows[0].id, job.description]
         );
         updated++;
       } else {
@@ -89,14 +98,14 @@ export const upsertJobs = async (jobs) => {
         await query(
           `INSERT INTO jobs (
              title, company, company_logo_url, company_domain, location,
-             job_url, description, posted_date, scraped_at, sources,
+             job_url, description, posted_date, deadline, scraped_at, sources,
              is_remote, experience_level, salary_min_bdt, salary_max_bdt, is_expired
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),$9,$10,$11,$12,$13,FALSE)
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),$10,$11,$12,$13,$14,FALSE)
            ON CONFLICT DO NOTHING`,
           [
             job.title, job.company, job.company_logo_url, job.company_domain,
             job.location, job.job_url, job.description,
-            job.posted_date || new Date().toISOString(),
+            job.posted_date, job.deadline,
             job.sources, job.is_remote, job.experience_level,
             job.salary_min_bdt, job.salary_max_bdt,
           ]
@@ -109,5 +118,38 @@ export const upsertJobs = async (jobs) => {
   }
 
   logger.info('Jobs upserted', { inserted, updated, total: jobs.length });
-  return { inserted, updated };
+return { inserted, updated };
+};
+
+// ── Mark expired jobs (run after each sync) ───────────────────────
+// A job with a deadline lives until that deadline; one without a deadline
+// expires if no scrape has seen it for 14 days.
+export const markExpiredJobs = async () => {
+  const result = await query(
+    `UPDATE jobs SET is_expired = TRUE
+     WHERE is_expired = FALSE
+       AND (
+         (deadline IS NOT NULL AND deadline < CURRENT_DATE)
+         OR (deadline IS NULL AND scraped_at < NOW() - INTERVAL '14 days')
+       )`
+  );
+  logger.info('Marked expired jobs', { count: result.rowCount });
+  return result.rowCount;
+};
+
+// ── Expire jobs that disappeared from a full-list source ──────────
+// Only valid for a source whose scrape returns its COMPLETE job list
+// (BDTechJobs). Jobs that other sources also listed are left alone.
+export const expireMissingJobs = async (source, scrapedJobUrls) => {
+  if (!source || !scrapedJobUrls || scrapedJobUrls.length === 0) return 0;
+  const result = await query(
+    `UPDATE jobs SET is_expired = TRUE
+     WHERE is_expired = FALSE
+       AND sources = ARRAY[$1]::text[]
+       AND job_url != ''
+       AND job_url <> ALL($2::text[])`,
+    [source, scrapedJobUrls]
+  );
+  logger.info('Expired missing jobs', { count: result.rowCount });
+  return result.rowCount;
 };

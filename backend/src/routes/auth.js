@@ -8,7 +8,8 @@ import {
 import { createOTP, verifyOTP, resendOTP } from '../services/otpService.js';
 import {
   generateTokens, setAuthCookies, clearAuthCookies,
-  createSession, revokeSession, isKnownDevice
+  createSession, revokeAllUserSessions, isKnownDevice,
+  generateResetToken, verifyResetToken,
 } from '../services/sessionService.js';
 import { sendOTPEmail, sendWelcomeEmail } from '../services/emailService.js';
 import { authLimiter, otpLimiter } from '../middleware/rateLimiter.js';
@@ -90,13 +91,13 @@ router.post('/verify-otp',
         await sendWelcomeEmail(email, user.name);
       }
 
-      // For forgot_password — return success with otp so frontend can pass it to reset
+      // For forgot_password — hand back a short-lived, single-use reset token
       if (purpose === 'forgot_password') {
         return res.json({
           success: true,
           message: 'OTP verified. You may now reset your password.',
           email,
-          otp,
+          resetToken: generateResetToken(user.id, user.password_hash),
         });
       }
 
@@ -258,23 +259,27 @@ router.post('/forgot-password',
   }
 );
 
-// ── Reset Password — no OTP re-verification needed ───────────────
+// ── Reset Password — requires the token from a verified forgot_password OTP
 router.post('/reset-password',
   authLimiter,
   [
     body('email').isEmail().normalizeEmail(),
+    body('resetToken').isString().notEmpty().withMessage('Reset token is required'),
     body('newPassword').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
   ],
   validate,
   async (req, res) => {
     try {
-      const { email, newPassword } = req.body;
+      const { email, resetToken, newPassword } = req.body;
       const user = await findUserByEmail(email);
-      if (!user) {
-        return res.status(404).json({ success: false, error: 'User not found.' });
+      if (!user || !verifyResetToken(resetToken, user)) {
+        return res.status(400).json({
+          success: false,
+          error: 'This reset link is invalid or has expired. Please request a new code.',
+        });
       }
       await updateUserPassword(user.id, newPassword);
-      await revokeSession(user.id);
+      await revokeAllUserSessions(user.id);
       logger.info('Password reset', { userId: user.id });
       res.json({ success: true, message: 'Password reset successfully. Please log in with your new password.' });
     } catch (err) {
@@ -292,7 +297,7 @@ router.get('/me', requireAuth, async (req, res) => {
 // ── Logout ───────────────────────────────────────────────────────
 router.post('/logout', requireAuth, async (req, res) => {
   try {
-    await revokeSession(req.user.id);
+    await revokeAllUserSessions(req.user.id);
     clearAuthCookies(res);
     res.json({ success: true, message: 'Logged out successfully.' });
   } catch (err) {

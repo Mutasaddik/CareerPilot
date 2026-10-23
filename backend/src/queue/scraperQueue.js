@@ -1,10 +1,10 @@
 // ════════════════════════════════════════════════════════════════
-// BullMQ Scraper Queue — max 5 concurrent, runs every 12 hours
+// BullMQ Scraper Queue — optional standalone worker (npm run worker)
+// The API process already runs the job sync on a timer (jobSyncService);
+// this queue lets a separate process run the same pipeline on demand.
 // ════════════════════════════════════════════════════════════════
-import { Queue, Worker, QueueEvents } from 'bullmq';
-import { scrapeAllSources } from '../services/scraperService.js';
-import { deduplicateInMemory, upsertJobs } from '../services/deduplicationService.js';
-import { logScraperRun } from '../services/scraperHealthService.js';
+import { Queue, Worker } from 'bullmq';
+import { runJobSync } from '../services/jobSyncService.js';
 import logger from '../services/loggerService.js';
 
 const REDIS_CONN = {
@@ -13,62 +13,26 @@ const REDIS_CONN = {
   password: process.env.REDIS_PASSWORD || undefined,
 };
 
-const ROLE_KEYWORDS = [
-  'software engineer', 'frontend developer', 'backend developer',
-  'full stack developer', 'QA engineer', 'SDET', 'data analyst',
-  'devops engineer', 'product manager', 'business analyst',
-  'marketing executive', 'sales executive', 'graphic designer',
-  'accountant', 'hr executive', 'customer service',
-];
-
 export const scraperQueue = new Queue('scraper', {
-  connection:       REDIS_CONN,
+  connection:        REDIS_CONN,
   defaultJobOptions: {
     removeOnComplete: 50,
     removeOnFail:     100,
-    attempts:         3,
-    backoff:          { type: 'exponential', delay: 5000 },
+    attempts:         1,
   },
 });
 
-// ── Worker (max 5 concurrent) ─────────────────────────────────────
 export const scraperWorker = new Worker(
   'scraper',
   async (job) => {
-    const { keywords = ROLE_KEYWORDS } = job.data;
-    const startedAt = new Date();
-    logger.info('Scraper job started', { jobId: job.id, keywords: keywords.length });
-
-    try {
-      const raw      = await scrapeAllSources(keywords);
-      const deduped  = deduplicateInMemory(raw);
-      const { inserted, updated } = await upsertJobs(deduped);
-
-      await logScraperRun({
-        source:    'all',
-        startedAt,
-        finishedAt: new Date(),
-        jobsFound:  inserted + updated,
-        status:     'success',
-      });
-
-      logger.info('Scraper job complete', { raw: raw.length, deduped: deduped.length, inserted, updated });
-      return { inserted, updated, total: deduped.length };
-    } catch (err) {
-      await logScraperRun({
-        source:    'all',
-        startedAt,
-        finishedAt: new Date(),
-        jobsFound:  0,
-        status:     'failed',
-        errorMessage: err.message,
-      });
-      throw err;
-    }
+    logger.info('Scraper job started', { jobId: job.id, name: job.name });
+    return runJobSync({ keywords: job.data?.keywords });
   },
   {
-    connection:  REDIS_CONN,
-    concurrency: 5,
+    connection:    REDIS_CONN,
+    concurrency:   1,
+    lockDuration:  3600000,  // a full sync can take a long time on first run
+    lockRenewTime: 300000,
   }
 );
 
@@ -80,24 +44,20 @@ scraperWorker.on('failed', (job, err) => {
   logger.error('Scraper worker failed', { jobId: job?.id, error: err.message });
 });
 
-// ── Schedule recurring job every 12 hours ────────────────────────
-export const scheduleScraperJob = async () => {
-  // Remove old repeatable job first to avoid duplicates
-  const repeatableJobs = await scraperQueue.getRepeatableJobs();
-  for (const j of repeatableJobs) {
-    if (j.name === 'scrape-all') await scraperQueue.removeRepeatableByKey(j.key);
-  }
+// Only process jobs in the dedicated worker process (npm run worker)
+if (process.env.RUN_WORKER !== 'true') {
+  scraperWorker.close();
+}
 
-  await scraperQueue.add(
-    'scrape-all',
-    { keywords: ROLE_KEYWORDS },
-    { repeat: { every: 12 * 60 * 60 * 1000 } }
-  );
-  logger.info('Scraper scheduled every 12 hours');
+// Older versions scheduled a 12-hourly repeatable job; remove it so a
+// standalone worker doesn't run a second sync alongside the API's timer.
+export const removeLegacyRepeatableJobs = async () => {
+  const repeatable = await scraperQueue.getRepeatableJobs();
+  for (const j of repeatable) await scraperQueue.removeRepeatableByKey(j.key);
 };
 
 // ── Manual trigger ────────────────────────────────────────────────
-export const triggerManualScrape = async (keywords = ROLE_KEYWORDS) => {
+export const triggerManualScrape = async (keywords) => {
   const job = await scraperQueue.add('scrape-manual', { keywords }, { priority: 1 });
   logger.info('Manual scrape triggered', { jobId: job.id });
   return job.id;

@@ -24,7 +24,7 @@ const getPasswordStrength = (password) => {
 export default function ResetPassword() {
   const navigate  = useNavigate();
   const location  = useLocation();
-  const { email, otp } = location.state || {};
+  const { email, resetToken } = location.state || {};
 
   const [form,     setForm]     = useState({ newPassword: '', confirmPassword: '' });
   const [showPass, setShowPass] = useState(false);
@@ -53,10 +53,10 @@ export default function ResetPassword() {
     e.preventDefault();
     if (form.newPassword.length < 8)               return setError('Password must be at least 8 characters.');
     if (form.newPassword !== form.confirmPassword)  return setError('Passwords do not match.');
-    mutation.mutate({ email, newPassword: form.newPassword });
+    mutation.mutate({ email, resetToken, newPassword: form.newPassword });
   };
 
-  if (!email || !otp) {
+  if (!email || !resetToken) {
     return (
       <div className="min-h-screen bg-bg-primary flex items-center justify-center px-4">
         <div className="glass-card p-8 text-center space-y-4 max-w-sm w-full">

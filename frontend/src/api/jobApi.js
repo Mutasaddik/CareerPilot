@@ -36,3 +36,17 @@ export const triggerScrape = async () => {
   const res = await api.post('/jobs/trigger-scrape');
   return res.data;
 };
+
+export const regenerateJobs = async () => {
+  const res = await api.post('/jobs/regenerate');
+  return res.data;
+};
+
+export const fetchRegenStatus = async () => {
+  try {
+    const res = await api.get('/jobs/regenerate/status');
+    return res.data;
+  } catch {
+    return { used: 0, limit: 5, remaining: 5 };
+  }
+};

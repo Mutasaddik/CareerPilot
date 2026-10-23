@@ -1,11 +1,11 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search, SlidersHorizontal, LayoutGrid, List,
-  RefreshCw, Loader2, Briefcase, TrendingUp, Star,
+  RefreshCw, Loader2, Briefcase, TrendingUp, Star, Sparkles,
 } from 'lucide-react';
-import { fetchJobs, fetchJobStats } from '../api/jobApi.js';
+import { fetchJobs, fetchJobStats, regenerateJobs, fetchRegenStatus } from '../api/jobApi.js';
 import useJobStore from '../store/jobStore.js';
 import JobCard from '../components/jobs/JobCard.jsx';
 import JobDetailDrawer from '../components/jobs/JobDetailDrawer.jsx';
@@ -30,24 +30,38 @@ const JobCardSkeleton = () => (
 );
 
 // ── Empty state ───────────────────────────────────────────────────
-const EmptyState = ({ search, onClear }) => (
+const EmptyState = ({ search, onClear, onRegen, regenLoading }) => (
   <div className="col-span-full flex flex-col items-center justify-center py-20 text-center">
     <div className="w-16 h-16 rounded-2xl bg-brand-cyan/10 border border-brand-cyan/20 flex items-center justify-center mb-4">
       <Briefcase className="w-8 h-8 text-brand-cyan" />
     </div>
     <h3 className="text-text-primary font-bold text-lg mb-2">
-      {search ? `No jobs matching "${search}"` : 'No jobs yet'}
+      {search ? `No jobs matching "${search}"` : 'No jobs found'}
     </h3>
     <p className="text-text-secondary text-sm max-w-xs mb-4">
       {search
         ? 'Try a different search term or lower the match filter.'
-        : 'Jobs are being scraped from LinkedIn, Indeed, Bdjobs, and Rozee. Check back shortly.'}
+        : 'Try regenerating to fetch fresh jobs tailored to your profile.'}
     </p>
-    {search && (
-      <button onClick={onClear} className="btn-primary px-4 py-2 text-sm">
-        Clear Search
-      </button>
-    )}
+    <div className="flex gap-3">
+      {search && (
+        <button onClick={onClear} className="btn-secondary px-4 py-2 text-sm">
+          Clear Search
+        </button>
+      )}
+      {!search && (
+        <button
+          onClick={onRegen}
+          disabled={regenLoading}
+          className="btn-primary px-4 py-2 text-sm flex items-center gap-2"
+        >
+          {regenLoading
+            ? <Loader2 className="w-4 h-4 animate-spin" />
+            : <Sparkles className="w-4 h-4" />}
+          {regenLoading ? 'Fetching jobs…' : 'Find My Jobs'}
+        </button>
+      )}
+    </div>
   </div>
 );
 
@@ -57,10 +71,10 @@ const StatsBar = ({ stats }) => {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
       {[
-        { label: 'Total Matched',  value: stats.total_matched || 0,  icon: Briefcase,   color: 'text-brand-cyan'  },
-        { label: 'Excellent (90%+)', value: stats.excellent || 0,    icon: Star,        color: 'text-green-400'   },
-        { label: 'Strong (70%+)',  value: stats.strong || 0,         icon: TrendingUp,  color: 'text-amber-400'   },
-        { label: 'Top Score',      value: `${stats.top_score || 0}%`, icon: Star,       color: 'text-purple-400'  },
+        { label: 'Total Matched',    value: stats.total_matched || 0,   icon: Briefcase,  color: 'text-brand-cyan' },
+        { label: 'Excellent (90%+)', value: stats.excellent || 0,       icon: Star,       color: 'text-green-400'  },
+        { label: 'Strong (70%+)',    value: stats.strong || 0,          icon: TrendingUp, color: 'text-amber-400'  },
+        { label: 'Top Score',        value: `${stats.top_score || 0}%`, icon: Star,       color: 'text-purple-400' },
       ].map(({ label, value, icon: Icon, color }) => (
         <div key={label} className="glass-card p-3 flex items-center gap-3">
           <Icon className={`w-5 h-5 ${color} shrink-0`} />
@@ -70,6 +84,48 @@ const StatsBar = ({ stats }) => {
           </div>
         </div>
       ))}
+    </div>
+  );
+};
+
+// ── Regenerate button with rate limit display ─────────────────────
+const RegenerateButton = ({ onRegen, regenLoading, regenStatus }) => {
+  const remaining = regenStatus?.remaining ?? null;
+  const limit     = regenStatus?.limit ?? null;
+  const used      = regenStatus?.used ?? 0;
+  const exhausted = remaining !== null && remaining <= 0;
+
+  return (
+    <div className="relative group shrink-0">
+      <button
+        onClick={onRegen}
+        disabled={regenLoading || exhausted}
+        data-testid="regenerate-jobs-btn"
+        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all
+          ${exhausted
+            ? 'bg-white/3 border-white/8 text-text-muted cursor-not-allowed'
+            : regenLoading
+              ? 'bg-brand-cyan/10 border-brand-cyan/30 text-brand-cyan cursor-wait'
+              : 'bg-brand-cyan/10 border-brand-cyan/30 text-brand-cyan hover:bg-brand-cyan/20 hover:border-brand-cyan/50'
+          }`}
+      >
+        {regenLoading
+          ? <Loader2 className="w-4 h-4 animate-spin" />
+          : <Sparkles className="w-4 h-4" />}
+        {regenLoading ? 'Refreshing…' : 'Regenerate'}
+        {remaining !== null && !exhausted && (
+          <span className="ml-1 px-1.5 py-0.5 rounded-md bg-white/10 text-xs text-text-muted">
+            {remaining}/{limit}
+          </span>
+        )}
+      </button>
+
+      {/* Tooltip on exhausted */}
+      {exhausted && (
+        <div className="absolute top-full mt-2 right-0 w-52 glass-card p-2.5 text-xs text-text-secondary z-50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+          Daily limit reached ({used}/{limit}). Resets at midnight.
+        </div>
+      )}
     </div>
   );
 };
@@ -86,8 +142,10 @@ export default function Jobs() {
     openDrawer, closeDrawer, setStats,
   } = useJobStore();
 
-  const observerRef   = useRef(null);
-  const searchTimeout = useRef(null);
+  const observerRef    = useRef(null);
+  const searchTimeout  = useRef(null);
+  const queryClient    = useQueryClient();
+  const [regenToast, setRegenToast] = useState(null);
 
   // Fetch stats
   const { data: statsData } = useQuery({
@@ -97,6 +155,13 @@ export default function Jobs() {
   });
   useEffect(() => { if (statsData?.stats) setStats(statsData.stats); }, [statsData]);
 
+  // Fetch regeneration status (remaining uses today)
+  const { data: regenStatus, refetch: refetchRegenStatus } = useQuery({
+    queryKey: ['regen-status'],
+    queryFn:  fetchRegenStatus,
+    staleTime: 60 * 1000,
+  });
+
   // Initial / filter-change fetch
   const { data, isLoading: queryLoading, refetch } = useQuery({
     queryKey: ['jobs', search, minScore],
@@ -104,8 +169,39 @@ export default function Jobs() {
     staleTime: 5 * 60 * 1000,
   });
   useEffect(() => { if (data?.jobs) setJobs(data.jobs, data.total || 0); }, [data]);
-
   useEffect(() => { setIsLoading(queryLoading); }, [queryLoading]);
+
+  // Regenerate mutation
+  const regenMutation = useMutation({
+    mutationFn: regenerateJobs,
+    onSuccess: (data) => {
+      setRegenToast({
+        type: 'success',
+        message: data.message || 'Jobs refreshed! New matches appearing shortly.',
+        remaining: data.remaining,
+        limit: data.limit,
+      });
+      // The refresh searches job sites in the background (can take a minute
+      // or two), so check back a few times as new matches land.
+      [5000, 30000, 90000].forEach((delay) => setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['jobs'] });
+        queryClient.invalidateQueries({ queryKey: ['job-stats'] });
+        refetchRegenStatus();
+        refetch();
+      }, delay));
+      setTimeout(() => setRegenToast(null), 6000);
+    },
+    onError: (err) => {
+      const msg = err?.response?.data?.error || 'Regeneration failed. Try again.';
+      setRegenToast({ type: 'error', message: msg });
+      setTimeout(() => setRegenToast(null), 5000);
+    },
+  });
+
+  const handleRegen = () => {
+    if (regenMutation.isPending) return;
+    regenMutation.mutate();
+  };
 
   // Infinite scroll — load more
   const loadMore = useCallback(async () => {
@@ -117,7 +213,6 @@ export default function Jobs() {
     } catch { setIsLoadingMore(false); }
   }, [hasMore, isLoadingMore, offset, minScore, search]);
 
-  // Intersection observer for infinite scroll
   useEffect(() => {
     const el = observerRef.current;
     if (!el) return;
@@ -134,6 +229,28 @@ export default function Jobs() {
 
   return (
     <div className="min-h-screen bg-bg-primary">
+      {/* Regen toast */}
+      <AnimatePresence>
+        {regenToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl border text-sm font-medium shadow-2xl backdrop-blur-xl
+              ${regenToast.type === 'success'
+                ? 'bg-green-500/20 border-green-500/30 text-green-300'
+                : 'bg-red-500/20 border-red-500/30 text-red-300'}`}
+          >
+            {regenToast.message}
+            {regenToast.remaining !== undefined && (
+              <span className="ml-2 text-text-muted text-xs">
+                ({regenToast.remaining} regenerations left today)
+              </span>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Topbar */}
       <div className="sticky top-0 z-30 bg-bg-primary/80 backdrop-blur-xl border-b border-white/8 px-6 py-4">
         <div className="flex items-center gap-4 max-w-7xl mx-auto">
@@ -147,7 +264,7 @@ export default function Jobs() {
             />
           </div>
 
-          {/* Min score filter */}
+          {/* Min score filter — default 50%, "All Matches" = 50%+ */}
           <div className="flex items-center gap-2 shrink-0">
             <SlidersHorizontal className="w-4 h-4 text-text-muted" />
             <select
@@ -155,8 +272,7 @@ export default function Jobs() {
               onChange={(e) => setMinScore(parseInt(e.target.value))}
               className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-text-primary text-sm focus:outline-none focus:border-brand-cyan/50"
             >
-              <option value={0}>All Matches</option>
-              <option value={50}>50%+ Match</option>
+              <option value={50}>All Matches</option>
               <option value={70}>70%+ Match</option>
               <option value={90}>90%+ Match</option>
             </select>
@@ -164,47 +280,64 @@ export default function Jobs() {
 
           {/* View toggle */}
           <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl p-1 shrink-0">
-            <button onClick={() => setViewMode('card')} className={`p-1.5 rounded-lg transition-colors ${viewMode === 'card' ? 'bg-brand-cyan/20 text-brand-cyan' : 'text-text-muted hover:text-text-primary'}`}>
+            <button
+              onClick={() => setViewMode('card')}
+              className={`p-1.5 rounded-lg transition-colors ${viewMode === 'card' ? 'bg-brand-cyan/20 text-brand-cyan' : 'text-text-muted hover:text-text-primary'}`}
+            >
               <LayoutGrid className="w-4 h-4" />
             </button>
-            <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-brand-cyan/20 text-brand-cyan' : 'text-text-muted hover:text-text-primary'}`}>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-brand-cyan/20 text-brand-cyan' : 'text-text-muted hover:text-text-primary'}`}
+            >
               <List className="w-4 h-4" />
             </button>
           </div>
 
-          <button onClick={() => refetch()} className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-text-muted hover:text-brand-cyan transition-colors shrink-0">
+          {/* Refresh cached results */}
+          <button
+            onClick={() => refetch()}
+            className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-text-muted hover:text-brand-cyan transition-colors shrink-0"
+            title="Refresh current results"
+          >
             <RefreshCw className="w-4 h-4" />
           </button>
+
+          {/* Regenerate — triggers new scrape */}
+          <RegenerateButton
+            onRegen={handleRegen}
+            regenLoading={regenMutation.isPending}
+            regenStatus={regenStatus}
+          />
         </div>
       </div>
 
       {/* Main content */}
       <div className="max-w-7xl mx-auto px-6 py-6">
-        {/* Stats */}
         <StatsBar stats={statsData?.stats} />
 
-        {/* Job count */}
         {!isLoading && jobs.length > 0 && (
           <p className="text-text-muted text-sm mb-4">
-            Showing <span className="text-text-primary font-medium">{jobs.length}</span> of <span className="text-text-primary font-medium">{total}</span> matched jobs
+            Showing <span className="text-text-primary font-medium">{jobs.length}</span> of{' '}
+            <span className="text-text-primary font-medium">{total}</span> matched jobs
           </p>
         )}
 
-        {/* Grid */}
-        <div className={`grid gap-4 ${viewMode === 'card' ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'}`}>
+        <motion.div layout className={`grid gap-4 ${viewMode === "card" ? "grid-cols-1 md:grid-cols-2 xl:grid-cols-3" : "grid-cols-1"}`}>
           {isLoading
             ? Array.from({ length: 6 }).map((_, i) => <JobCardSkeleton key={i} />)
             : jobs.length === 0
-              ? <EmptyState search={search} onClear={() => setSearch('')} />
+              ? <EmptyState
+                  search={search}
+                  onClear={() => setSearch('')}
+                  onRegen={handleRegen}
+                  regenLoading={regenMutation.isPending}
+                />
               : jobs.map((job) => (
-                  <JobCard
-                    key={job.id}
-                    job={job}
-                    onClick={() => openDrawer(job)}
-                  />
+                  <JobCard key={job.id} job={job} onClick={() => openDrawer(job)} />
                 ))
           }
-        </div>
+        </motion.div>
 
         {/* Infinite scroll sentinel */}
         <div ref={observerRef} className="h-10 flex items-center justify-center mt-4">

@@ -13,7 +13,8 @@ import { generalLimiter } from './middleware/rateLimiter.js';
 
 import healthRouter      from './routes/health.js';
 import { loadTaxonomy, loadRoleMappings, loadCuratedPacks } from './services/taxonomyService.js';
-import { scheduleScraperJob, scraperWorker } from './queue/scraperQueue.js';
+import { scheduleJobSync } from './services/jobSyncService.js';
+import { removeLegacyRepeatableJobs } from './queue/scraperQueue.js';
 import maintenanceRouter from './routes/maintenance.js';
 import authRouter        from './routes/auth.js';
 import userRouter        from './routes/user.js';
@@ -83,7 +84,8 @@ const start = async () => {
   await loadTaxonomy();
   await loadRoleMappings();
   await loadCuratedPacks();
-  await scheduleScraperJob();
+  await removeLegacyRepeatableJobs().catch((err) => logger.warn('Could not clear legacy scraper schedule', { error: err.message }));
+  scheduleJobSync();
 
   httpServer.listen(PORT, () => {
     logger.info(`CareerPilot API running on port ${PORT}`, {

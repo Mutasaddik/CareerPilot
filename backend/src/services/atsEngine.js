@@ -71,9 +71,35 @@ export const detectSections = (text) => {
 };
 
 export const extractExperienceYears = (text) => {
-  const norm = normalize(text);
+  const normText = text || '';
+  
+  // Find where the experience section starts
+  const expMatch = normText.match(/\b(work\s+experience|employment\s+history|work\s+history|professional\s+experience|professional\s+background)\b/i) || 
+                   normText.match(/(?:^|\n)\s*\b(experience|employment)\b\s*(?:\n|$)/i) || 
+                   normText.match(/\b(experience|employment)\b/i);
+  let expText = normText;
+  
+  if (expMatch) {
+    const startIndex = expMatch.index;
+    const afterExp = normText.slice(startIndex + expMatch[0].length);
+    // Find where the next section starts
+    const nextSectionMatch = afterExp.match(/\b(education|academic|qualification|skills|technologies|technical\s*skills|projects|portfolio|certifications?|licenses?|courses?|training|languages|interests)\b/i);
+    if (nextSectionMatch) {
+      expText = normText.slice(startIndex, startIndex + expMatch[0].length + nextSectionMatch.index);
+    } else {
+      expText = normText.slice(startIndex);
+    }
+  } else {
+    // If no experience section is labeled, use whole text but exclude lines mentioning education
+    const lines = normText.split('\n');
+    const filteredLines = lines.filter(line => !/\b(university|college|school|b\.?s\.?c|m\.?s\.?c|b\.?a|m\.?a|b\.?b\.?a|m\.?b\.?a|bachelor|master|education|academic)\b/i.test(line));
+    expText = filteredLines.join('\n');
+  }
+
+  const norm = normalize(expText);
   const yearMentions = [...norm.matchAll(/(\d+(?:\.\d+)?)\s*\+?\s*years?/g)]
     .map((m) => parseFloat(m[1])).filter((y) => y > 0 && y <= 50);
+  
   const currentYear = new Date().getFullYear();
   const ranges = [...norm.matchAll(/(20\d{2}|19\d{2})\s*[-–—to]+\s*(20\d{2}|19\d{2}|present|current|now)/g)];
   let rangeYears = 0;
@@ -83,7 +109,19 @@ export const extractExperienceYears = (text) => {
     if (end >= start && end - start <= 50) rangeYears += (end - start);
   }
   const fromMentions = yearMentions.length ? Math.max(...yearMentions) : 0;
-  return Math.max(fromMentions, rangeYears);
+  // Prefer explicit "X years" mentions over date range calculation
+  // Date ranges often include education years, causing overcounting
+  let finalYears;
+  if (fromMentions > 0) {
+    // Trust explicit mention (e.g. "2+ years of experience") over date math
+    finalYears = fromMentions;
+  } else if (rangeYears > 0) {
+    // Cap at 20 to avoid education date ranges inflating the count
+    finalYears = Math.min(rangeYears, 20);
+  } else {
+    finalYears = 0;
+  }
+  return finalYears > 0 ? Math.round(finalYears) : 0;
 };
 
 export const analyzeWritingPattern = (text) => {

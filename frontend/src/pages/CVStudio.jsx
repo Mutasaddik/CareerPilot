@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Upload, Star, Building2, Briefcase, Trash2,
   ChevronRight, FileText, AlertCircle, CheckCircle,
-  TrendingUp, Lightbulb, Target, Loader2, Plus
+  TrendingUp, Lightbulb, Target, Loader2, Plus, Sparkles, PenLine
 } from 'lucide-react';
-import { getAllCVs, setCVPrimary, updateCVScope, deleteCV, reanalyzeCV } from '../api/cvApi.js';
+import {
+  getAllCVs, setCVPrimary, updateCVScope, deleteCV, reanalyzeCV,
+  getCVRewrites, createCVRewrite, deleteCVRewrite,
+} from '../api/cvApi.js';
 import useCVStore from '../store/cvStore.js';
 import CVUpload from '../components/cv/CVUpload.jsx';
 import CVScoreGauge from '../components/cv/CVScoreGauge.jsx';
+import CVRewriteEditor from '../components/cv/CVRewriteEditor.jsx';
 
 const scopeBadge = (cv) => {
   if (cv.is_primary)                    return { label: 'Primary',      color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' };
@@ -196,12 +201,82 @@ function ImprovementSection({ analysis }) {
   );
 }
 
+// ── AI-rewritten CVs (general + tailored to a job) ───────────────
+function RewritesSection({ activeCV, onOpen, showToast }) {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ['cv-rewrites'], queryFn: getCVRewrites });
+  const rewrites = data?.rewrites || [];
+
+  const createMut = useMutation({
+    mutationFn: () => createCVRewrite({ cvId: activeCV.id }),
+    onSuccess:  (res) => {
+      qc.invalidateQueries({ queryKey: ['cv-rewrites'] });
+      onOpen(res.rewrite.id);
+    },
+    onError: (err) => showToast(err?.response?.data?.error || 'Rewrite failed. Please try again.', 'error'),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id) => deleteCVRewrite(id),
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ['cv-rewrites'] }),
+  });
+
+  return (
+    <div className="glass-card p-5 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-text-primary font-semibold text-sm flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-brand-cyan" /> Rewritten CVs
+          </h3>
+          <p className="text-text-secondary text-xs mt-1">
+            AI rewrites your CV using only facts already in it. Tailor one to a job from the job's details panel.
+          </p>
+        </div>
+        <button
+          onClick={() => createMut.mutate()}
+          disabled={createMut.isPending}
+          className="btn-primary px-3 py-2 text-xs flex items-center gap-1.5 shrink-0 disabled:opacity-60"
+        >
+          {createMut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+          {createMut.isPending ? 'Rewriting… (~15s)' : 'Rewrite this CV'}
+        </button>
+      </div>
+
+      {rewrites.length > 0 && (
+        <div className="space-y-2">
+          {rewrites.map((r) => (
+            <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/3 border border-white/8">
+              <div className="flex-1 min-w-0">
+                <p className="text-text-primary text-sm truncate">{r.title}</p>
+                <p className="text-text-muted text-xs">
+                  {r.job_id ? 'Tailored to job' : 'General'} · edited {new Date(r.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                </p>
+              </div>
+              <button onClick={() => onOpen(r.id)}
+                className="text-xs py-1.5 px-3 rounded-lg bg-brand-cyan/10 hover:bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/20 flex items-center gap-1">
+                <PenLine className="w-3 h-3" /> Open
+              </button>
+              <button onClick={() => { if (window.confirm('Delete this rewritten CV?')) deleteMut.mutate(r.id); }}
+                className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CVStudio() {
   const qc = useQueryClient();
   const { cvs, setCVs, activeCVId, setActiveCV, analysisData, setIsAnalyzing } = useCVStore();
   const [showUpload, setShowUpload]   = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [toast, setToast]             = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openRewriteId = searchParams.get('rewrite');
+  const openRewrite   = (id) => setSearchParams(id ? { rewrite: id } : {});
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -413,6 +488,8 @@ export default function CVStudio() {
                 </div>
               )}
 
+              <RewritesSection activeCV={activeCV} onOpen={openRewrite} showToast={showToast} />
+
               <ImprovementSection analysis={activeCV.analysis_json} />
             </>
           ) : (
@@ -447,6 +524,13 @@ export default function CVStudio() {
               onClose={() => setShowUpload(false)}
             />
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Rewritten CV editor */}
+      <AnimatePresence>
+        {openRewriteId && (
+          <CVRewriteEditor rewriteId={openRewriteId} onClose={() => openRewrite(null)} />
         )}
       </AnimatePresence>
 

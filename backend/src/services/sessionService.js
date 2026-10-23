@@ -23,6 +23,28 @@ export const verifyRefreshToken = (token) => {
   try { return jwt.verify(token, REFRESH_SECRET); } catch { return null; }
 };
 
+// ── Password-reset token ──────────────────────────────────────────
+// Issued only after the forgot-password OTP is verified. It carries a
+// fingerprint of the current password hash, so it stops working as soon
+// as the password changes — i.e. it can be used once.
+// Separate secret so a reset token can never be accepted as an access token.
+const RESET_SECRET = `${ACCESS_SECRET}:password-reset`;
+const RESET_EXPIRY = '10m';
+const passwordFingerprint = (passwordHash) => (passwordHash || '').slice(-16);
+
+export const generateResetToken = (userId, passwordHash) =>
+  jwt.sign({ userId, purpose: 'password_reset', pwf: passwordFingerprint(passwordHash) },
+    RESET_SECRET, { expiresIn: RESET_EXPIRY });
+
+export const verifyResetToken = (token, user) => {
+  try {
+    const p = jwt.verify(token, RESET_SECRET);
+    return p.purpose === 'password_reset'
+      && p.userId === user.id
+      && p.pwf === passwordFingerprint(user.password_hash);
+  } catch { return false; }
+};
+
 const normalizeIP = (ip) => {
   if (!ip) return '127.0.0.1';
   if (ip === '::1') return '127.0.0.1';

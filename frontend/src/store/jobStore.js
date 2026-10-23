@@ -69,7 +69,7 @@ const useJobStore = create((set, get) => ({
   reset: () => set({
     jobs: [], total: 0, offset: 0, hasMore: true,
     isLoading: false, isLoadingMore: false,
-    search: '', minScore: 0,
+    search: '', minScore: 70,
     drawerJobId: null, drawerJob: null, drawerOpen: false,
     savedIds: new Set(), stats: null, error: null,
   }),

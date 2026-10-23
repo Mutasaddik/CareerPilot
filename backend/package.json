@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
+    "worker": "RUN_WORKER=true node src/worker.js",
+    "worker:dev": "RUN_WORKER=true nodemon src/worker.js",
     "seed:superadmin": "node src/scripts/seedSuperAdmin.js",
     "db:migrate": "node src/scripts/migrate.js",
     "seed:taxonomy": "node src/scripts/seedTaxonomy.js",

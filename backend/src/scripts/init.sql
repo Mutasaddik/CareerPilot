@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS cvs (
   company_name         VARCHAR(255),
   job_id               UUID,
   is_primary           BOOLEAN NOT NULL DEFAULT FALSE,
+  original_filename    VARCHAR(500),
   uploaded_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -113,6 +114,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   experience_level VARCHAR(50),
   salary_min_bdt   INTEGER,
   salary_max_bdt   INTEGER,
+  deadline         DATE,
   is_expired       BOOLEAN NOT NULL DEFAULT FALSE
 );
 
@@ -120,6 +122,22 @@ CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);
 CREATE INDEX IF NOT EXISTS idx_jobs_title ON jobs USING gin(to_tsvector('english', title));
 CREATE INDEX IF NOT EXISTS idx_jobs_scraped ON jobs(scraped_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_expired ON jobs(is_expired);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_url ON jobs(job_url);
+
+-- ── CV Rewrites (AI-improved / job-tailored CVs) ─────────────────
+CREATE TABLE IF NOT EXISTS cv_rewrites (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cv_id        UUID REFERENCES cvs(id) ON DELETE SET NULL,
+  job_id       UUID REFERENCES jobs(id) ON DELETE SET NULL,
+  title        VARCHAR(255) NOT NULL,
+  content_json JSONB NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cv_rewrites_user ON cv_rewrites(user_id, updated_at DESC);
 
 -- ── Job Matches ──────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS job_matches (
@@ -129,7 +147,7 @@ CREATE TABLE IF NOT EXISTS job_matches (
   match_breakdown_json JSONB,
   alerted              BOOLEAN NOT NULL DEFAULT FALSE,
   seen                 BOOLEAN NOT NULL DEFAULT FALSE,
-  user_feedback        VARCHAR(20) CHECK (user_feedback IN ('up','down',NULL)),
+  user_feedback        VARCHAR(20) CHECK (user_feedback IN ('positive','negative','saved',NULL)),
   PRIMARY KEY (user_id, job_id)
 );
 
@@ -414,7 +432,7 @@ CREATE TABLE IF NOT EXISTS job_feedback (
   id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   job_id        UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-  feedback_type VARCHAR(10) NOT NULL CHECK (feedback_type IN ('up','down')),
+  feedback_type VARCHAR(10) NOT NULL CHECK (feedback_type IN ('positive','negative')),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(user_id, job_id)
 );

@@ -24,7 +24,9 @@ import SuperAdminDashboard from './pages/superadmin/SuperAdminDashboard.jsx';
 import AdminDashboard      from './pages/admin/AdminDashboard.jsx';
 import ModeratorDashboard  from './pages/moderator/ModeratorDashboard.jsx';
 import Jobs                from './pages/Jobs.jsx';
-import CVStudio           from './pages/CVStudio.jsx';
+import CVStudio            from './pages/CVStudio.jsx';
+import Dashboard           from './pages/Dashboard.jsx';
+import AuthenticatedLayout from './components/layout/AuthenticatedLayout.jsx';
 
 const checkMaintenance = async () => {
   try {
@@ -71,7 +73,6 @@ function DashboardRedirect() {
 
 function SessionInit() {
   const { setUser, clearUser, setLoading } = useAuthStore();
-  const setProfile = useUserStore((s) => s.setProfile);
 
   const { data, isError, isSuccess, isPending } = useQuery({
     queryKey: ['auth-session'],
@@ -98,8 +99,9 @@ function SessionInit() {
   return null;
 }
 
-// Smart dashboard for regular users — checks onboarding status
-function UserDashboard() {
+// Loads the user profile into userStore once authenticated, then
+// redirects to onboarding if it hasn't been completed yet.
+function DashboardGate() {
   const { isAuthenticated, isLoading } = useAuthStore();
   const setProfile = useUserStore((s) => s.setProfile);
 
@@ -117,24 +119,11 @@ function UserDashboard() {
   if (isLoading || profileLoading) return <Spinner />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
-  const onboardingDone = data?.profile?.onboarding_completed;
+  if (data?.profile && data.profile.onboarding_completed === false) {
+    return <Navigate to="/onboarding" replace />;
+  }
 
-  return (
-    <div className="min-h-screen bg-bg-primary flex items-center justify-center">
-      <div className="glass-card p-8 text-center space-y-4 max-w-sm">
-        <p className="text-text-primary font-bold text-xl">🎉 Welcome to CareerPilot!</p>
-        <p className="text-text-secondary text-sm">Full dashboard coming in Phase 5.</p>
-        {!onboardingDone && (
-          <a href="/onboarding" className="btn-primary w-full justify-center text-sm block">
-            Complete Setup →
-          </a>
-        )}
-        <a href="/settings" className="btn-ghost w-full justify-center text-sm block">
-          Settings
-        </a>
-      </div>
-    </div>
-  );
+  return <Dashboard />;
 }
 
 export default function App() {
@@ -161,21 +150,26 @@ export default function App() {
     <BrowserRouter>
       <SessionInit />
       <Routes>
+        {/* Public */}
         <Route path="/"        element={<Landing />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms"   element={<TermsPage />} />
         <Route path="/500"     element={<ServerError />} />
 
+        {/* Auth */}
         <Route path="/register"        element={<Register />} />
         <Route path="/login"           element={<Login />} />
         <Route path="/verify-otp"      element={<OTPVerify />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password"  element={<ResetPassword />} />
 
+        {/* Onboarding stands alone (no shell) */}
         <Route path="/onboarding" element={<AuthRequired><Onboarding /></AuthRequired>} />
-        <Route path="/settings"   element={<AuthRequired><Settings /></AuthRequired>} />
-        <Route path="/dashboard"  element={<DashboardRedirect />} />
 
+        {/* Dashboard entry redirect by role */}
+        <Route path="/dashboard" element={<DashboardRedirect />} />
+
+        {/* Admin panels keep their own Phase 3 layouts */}
         <Route path="/superadmin/dashboard" element={
           <RoleRoute allowedRoles={['superadmin']}><SuperAdminDashboard /></RoleRoute>
         } />
@@ -186,10 +180,14 @@ export default function App() {
           <RoleRoute allowedRoles={['moderator', 'admin', 'superadmin']}><ModeratorDashboard /></RoleRoute>
         } />
 
-        <Route path="/jobs" element={<RoleRoute allowedRoles={["superadmin","admin","moderator","user"]}><Jobs /></RoleRoute>} />
-        <Route path="/cv" element={<RoleRoute allowedRoles={["superadmin","admin","moderator","user"]}><CVStudio /></RoleRoute>} />
+        {/* User app — wrapped in the persistent shell (Sidebar + Topbar + MobileNav) */}
+        <Route element={<AuthenticatedLayout />}>
+          <Route path="/dashboard-home" element={<DashboardGate />} />
+          <Route path="/jobs"           element={<Jobs />} />
+          <Route path="/cv"             element={<CVStudio />} />
+          <Route path="/settings"       element={<Settings />} />
+        </Route>
 
-        <Route path="/dashboard-home" element={<AuthRequired><UserDashboard /></AuthRequired>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>

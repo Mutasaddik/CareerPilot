@@ -49,18 +49,52 @@ export const loadTaxonomy = async () => {
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// ── Skill index (built lazily, rebuilt when SKILLS changes) ───────
+// Most skills are plain words ("node.js" → "node js"), so we look them up
+// as n-grams of the text instead of running one regex per skill per text.
+// Only skills with symbols that tokenizing would lose (c++, c#) use a regex.
+const tokenize = (s) => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+let skillIndex = null;   // { source, grams: Map<gram, name>, maxN, regexSkills: [[re, name]] }
+
+const getSkillIndex = () => {
+  if (skillIndex && skillIndex.source === SKILLS) return skillIndex;
+  const grams = new Map();
+  const regexSkills = [];
+  let maxN = 1;
+  for (const [key, meta] of SKILLS) {
+    if (key.length < 2) continue; // ultra-short keys cause false positives
+    if (/[^a-z0-9\s.\-/]/.test(key)) {
+      regexSkills.push([new RegExp(`[^a-z0-9]${escapeRegex(key)}[^a-z0-9]`, 'i'), meta.name]);
+      continue;
+    }
+    const toks = tokenize(key);
+    if (toks.length === 0) continue;
+    const gram = toks.join(' ');
+    if (!grams.has(gram)) grams.set(gram, meta.name);
+    maxN = Math.max(maxN, toks.length);
+  }
+  skillIndex = { source: SKILLS, grams, maxN: Math.min(maxN, 6), regexSkills };
+  return skillIndex;
+};
+
 // Extract all known skills present in text (word-boundary safe)
 export const extractSkillsFromText = (text) => {
-  const norm  = ` ${text.toLowerCase().replace(/\s+/g, ' ')} `;
-  const found = [];
-  for (const [key, meta] of SKILLS) {
-    // skip ultra-short keys that cause false positives (e.g. 'r', 'go' needs boundary care)
-    if (key.length < 2) continue;
-    const re = new RegExp(`[^a-z0-9]${escapeRegex(key)}[^a-z0-9]`, 'i');
-    if (re.test(norm)) found.push(meta.name);
-    if (found.length >= 150) break; // sanity cap
+  const { grams, maxN, regexSkills } = getSkillIndex();
+  const toks  = tokenize(text || '');
+  const found = new Set();
+  for (let i = 0; i < toks.length && found.size < 150; i++) {
+    let gram = '';
+    for (let n = 1; n <= maxN && i + n <= toks.length; n++) {
+      gram = n === 1 ? toks[i] : `${gram} ${toks[i + n - 1]}`;
+      const name = grams.get(gram);
+      if (name) found.add(name);
+    }
   }
-  return found;
+  if (regexSkills.length) {
+    const norm = ` ${(text || '').toLowerCase().replace(/\s+/g, ' ')} `;
+    for (const [re, name] of regexSkills) if (re.test(norm)) found.add(name);
+  }
+  return [...found].slice(0, 150); // sanity cap
 };
 
 export const extractCertificationsFromText = (text) => {
@@ -149,6 +183,7 @@ export const getExpectedSkillsForRole = (onetCode, limit = 25) => {
 
 // ── Curated role keyword packs (priority over O*NET) ─────────────
 let CURATED_PACKS = [];   // [{ role_name, title_synonyms, keywords, tools }]
+export const getCuratedPacksRaw = () => CURATED_PACKS;
 
 // O*NET universal competencies — true for every job, useless as recommendations
 const GENERIC_COMPETENCIES = new Set([
@@ -192,7 +227,7 @@ const FAMILY_TOKENS = {
   'devops engineer':      { devops: 3, sre: 3, infrastructure: 2, cloud: 1, kubernetes: 2, docker: 1, reliability: 2 },
   'data analyst':         { data: 2, analytics: 2, analyst: 1, bi: 2, 'power-bi': 2, tableau: 2, 'deep-learning': 2, 'machine-learning': 2, learning: 1 },
   'business analyst':     { business: 2, functional: 2, requirements: 2, product: 1 },
-  'qa engineer_x':        {},
+  
   'marketing specialist': { marketing: 3, seo: 2, digital: 1, brand: 2, content: 1, campaign: 2, growth: 2 },
   'sales executive':      { sales: 3, selling: 2, 'business-development': 2, bd: 0, revenue: 1, account: 1 },
   'merchandiser':         { merchandiser: 3, merchandising: 3, apparel: 2, garments: 2, buyer: 2, sourcing: 2 },
