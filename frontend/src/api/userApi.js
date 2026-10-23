@@ -15,3 +15,8 @@ export const exportUserData        = () => api.get('/user/export', { responseTyp
 export const deleteUserAccount     = () => api.delete('/user/account').then((r) => r.data);
 
 export default api;
+
+// ── Profession (what jobs are matched to) ─────────────────────────
+export const getMyRole     = () => api.get('/user/role').then((r) => r.data);
+export const confirmRole   = (role) => api.put('/user/role', { role }).then((r) => r.data);
+export const searchRoles   = (q) => api.get('/user/role/search', { params: { q } }).then((r) => r.data);

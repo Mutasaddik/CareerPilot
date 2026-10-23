@@ -29,11 +29,11 @@ const GlassInput = forwardRef(function GlassInput(
         </label>
       )}
       <div
-        className={`relative flex items-center rounded-xl border bg-white/5 backdrop-blur-sm
+        className={`relative flex items-center rounded-xl border bg-fg/5 backdrop-blur-sm
                     transition-colors duration-200
                     ${error
                       ? 'border-red-500/50 focus-within:border-red-500/70'
-                      : 'border-white/10 focus-within:border-brand-cyan/50'}
+                      : 'border-fg/10 focus-within:border-brand-cyan/50'}
                     focus-within:shadow-[0_0_0_3px_rgba(34,211,238,0.08)]`}
       >
         {Icon && (

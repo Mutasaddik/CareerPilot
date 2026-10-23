@@ -7,6 +7,10 @@ import {
   deleteUserAccount, exportUserData,
 } from '../services/userService.js';
 import { revokeAllUserSessions } from '../services/sessionService.js';
+import { getUserContext, buildUserProfile, recalculateUserMatches } from '../services/matchingService.js';
+import { classifyOccupation, searchOccupations } from '../services/taxonomyService.js';
+import { deleteCachePattern } from '../models/redis.js';
+import { query } from '../models/db.js';
 import { clearAuthCookies } from '../services/sessionService.js';
 import logger from '../services/loggerService.js';
 
@@ -89,6 +93,55 @@ router.post('/onboarding/complete', async (req, res) => {
   } catch (err) {
     logger.error('Complete onboarding error', { error: err.message });
     res.status(500).json({ success: false, error: 'Failed to complete onboarding.' });
+  }
+});
+
+// ── Profession: what we match the user as, and their confirmation ──
+// GET  /user/role         — current reading (confirmed / chosen / from CV)
+// PUT  /user/role         — "Yes, that's me" or a different profession
+// GET  /user/role/search  — profession suggestions while typing
+router.get('/role', async (req, res) => {
+  try {
+    const ctx = await getUserContext(req.user.id);
+    const profile = buildUserProfile(ctx);
+    res.json({
+      success:   true,
+      confirmed: ctx.confirmed_role || null,
+      matched:   profile.userOcc ? profile.userOcc.name : null,  // what jobs are matched to now
+      source:    profile.roleSource,                             // 'confirmed' | 'target' | 'cv' | null
+      from_cv:   profile.cvOcc ? profile.cvOcc.name : null,      // what the CV alone says
+      has_cv:    !!ctx.extracted_text,
+      note:      profile.roleNote,
+    });
+  } catch (err) {
+    logger.error('Get role error', { error: err.message });
+    res.status(500).json({ success: false, error: 'Failed to read your profession.' });
+  }
+});
+
+router.get('/role/search', (req, res) => {
+  res.json({ success: true, roles: searchOccupations(String(req.query.q || '').slice(0, 60)) });
+});
+
+router.put('/role', [
+  body('role').optional({ values: 'null' }).isString().trim().isLength({ min: 2, max: 160 })
+    .withMessage('Enter your profession (2–160 characters)'),
+], validate, async (req, res) => {
+  try {
+    const role = req.body.role ? req.body.role.trim() : null;
+    await query(
+      `INSERT INTO user_profiles (user_id, confirmed_role) VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET confirmed_role = $2`,
+      [req.user.id, role]
+    );
+    // Rematch now (well under a second) so the next page load shows the new jobs
+    await recalculateUserMatches(req.user.id);
+    await deleteCachePattern(`market:${req.user.id}`);
+    const occ = role ? classifyOccupation(role) : null;
+    res.json({ success: true, confirmed: role, recognised: role ? !!occ : null, matched_as: occ ? occ.name : role });
+  } catch (err) {
+    logger.error('Confirm role error', { error: err.message });
+    res.status(500).json({ success: false, error: 'Failed to save your profession.' });
   }
 });
 

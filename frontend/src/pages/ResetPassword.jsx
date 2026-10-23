@@ -14,11 +14,11 @@ const getPasswordStrength = (password) => {
   if (/[A-Z]/.test(password))      score++;
   if (/[0-9]/.test(password))      score++;
   if (/[^A-Za-z0-9]/.test(password)) score++;
-  if (score <= 1) return { score, label: 'Weak',        color: '#ef4444' };
-  if (score <= 2) return { score, label: 'Fair',        color: '#f59e0b' };
-  if (score <= 3) return { score, label: 'Good',        color: '#3b82f6' };
-  if (score <= 4) return { score, label: 'Strong',      color: '#22c55e' };
-  return             { score, label: 'Very Strong',  color: '#22c55e' };
+  if (score <= 1) return { score, label: 'Weak',        color: 'rgb(var(--danger))' };
+  if (score <= 2) return { score, label: 'Fair',        color: 'rgb(var(--warning))' };
+  if (score <= 3) return { score, label: 'Good',        color: 'rgb(var(--info))' };
+  if (score <= 4) return { score, label: 'Strong',      color: 'rgb(var(--success))' };
+  return             { score, label: 'Very Strong',  color: 'rgb(var(--success))' };
 };
 
 export default function ResetPassword() {
@@ -138,7 +138,7 @@ export default function ResetPassword() {
                   <div className="flex gap-1">
                     {[1,2,3,4,5].map((i) => (
                       <div key={i} className="flex-1 h-1 rounded-full transition-all duration-300"
-                        style={{ background: i <= pwStrength.score ? pwStrength.color : 'rgba(255,255,255,0.08)' }} />
+                        style={{ background: i <= pwStrength.score ? pwStrength.color : 'rgb(var(--fg) / 0.1)' }} />
                     ))}
                   </div>
                   <p className="text-xs" style={{ color: pwStrength.color }}>{pwStrength.label}</p>

@@ -30,3 +30,26 @@ export const deleteApplication = async (id) => {
   const res = await api.delete(`/applications/${id}`);
   return res.data;
 };
+
+// ── Interviews ────────────────────────────────────────────────────
+// scheduledAt: ISO date-time; roundType: phone | technical | hr | assessment | final | other
+export const addInterview = async (applicationId, { scheduledAt, roundType, prepNotes }) => {
+  const res = await api.post(`/applications/${applicationId}/interviews`, { scheduledAt, roundType, prepNotes });
+  return res.data;
+};
+
+export const updateInterview = async (interviewId, fields) => {
+  const res = await api.patch(`/applications/interviews/${interviewId}`, fields);
+  return res.data;
+};
+
+export const deleteInterview = async (interviewId) => {
+  const res = await api.delete(`/applications/interviews/${interviewId}`);
+  return res.data;
+};
+
+// Soonest upcoming interview (or null)
+export const fetchNextInterview = async () => {
+  const res = await api.get('/applications/interviews/next');
+  return res.data;
+};

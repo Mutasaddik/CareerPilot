@@ -7,11 +7,14 @@ import {
   Zap, Edit2, X, Briefcase, ChevronDown
 } from 'lucide-react';
 import { getUserProfile, updateUserProfile, updateUserPreferences, deleteUserAccount } from '../api/userApi.js';
+import { setTheme, useTheme } from '../utils/theme.js';
 import { logoutUser } from '../api/authApi.js';
 import useAuthStore from '../store/authStore.js';
 import useUserStore from '../store/userStore.js';
 import { useNavigate, Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import RolePicker from '../components/profile/RolePicker.jsx';
+import ProfessionCard from '../components/profile/ProfessionCard.jsx';
 
 const TABS = [
   { id: 'profile',     label: 'Profile',        icon: User },
@@ -43,17 +46,6 @@ const COUNTRY_CODES = [
 const TIMEZONES = [
   'Asia/Dhaka', 'Asia/Kolkata', 'Asia/Singapore', 'Asia/Tokyo',
   'Europe/London', 'Europe/Paris', 'America/New_York', 'America/Los_Angeles', 'UTC',
-];
-
-const POPULAR_ROLES = [
-  'Software Engineer', 'Frontend Developer', 'Backend Developer', 'Full Stack Developer',
-  'Data Scientist', 'Data Analyst', 'Machine Learning Engineer', 'AI Engineer',
-  'Product Manager', 'Project Manager', 'Business Analyst', 'System Analyst',
-  'UI/UX Designer', 'Graphic Designer', 'Mobile Developer (Android)', 'Mobile Developer (iOS)',
-  'DevOps Engineer', 'Cloud Engineer', 'Network Engineer', 'Cybersecurity Engineer',
-  'QA Engineer', 'Test Automation Engineer', 'Embedded Systems Engineer',
-  'Database Administrator', 'Technical Writer', 'IT Support Engineer',
-  'Blockchain Developer', 'Game Developer', 'ERP Consultant', 'SAP Consultant',
 ];
 
 const POPULAR_SKILLS = [
@@ -195,13 +187,7 @@ export default function Settings() {
         salaryMaxBdt:     p.salary_max_bdt?.toString() || '',
       });
       setProfile(p);
-      if (p.theme_preference === 'light') {
-        document.documentElement.classList.remove('dark');
-        document.documentElement.classList.add('light');
-      } else {
-        document.documentElement.classList.remove('light');
-        document.documentElement.classList.add('dark');
-      }
+      // Theme is NOT applied here — it only changes when the user changes it
     }
   }, [profileData]);
 
@@ -227,17 +213,12 @@ export default function Settings() {
     onError: () => showToast('Failed to save preferences.', 'error'),
   });
 
+  const currentTheme = useTheme();
   const themeMutation = useMutation({
     mutationFn: (themePreference) => updateUserProfile({ themePreference }),
-    onSuccess: (_, themePreference) => {
+    onMutate:  (themePreference) => setTheme(themePreference), // switch instantly
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user-profile'] });
-      if (themePreference === 'light') {
-        document.documentElement.classList.remove('dark');
-        document.documentElement.classList.add('light');
-      } else {
-        document.documentElement.classList.remove('light');
-        document.documentElement.classList.add('dark');
-      }
       showToast('Theme updated.');
     },
   });
@@ -444,10 +425,10 @@ export default function Settings() {
                                   const found = COUNTRY_CODES.find((c) => c.code === e.target.value);
                                   if (found) { setSelectedCountry(found); setPhoneNumber(''); }
                                 }}
-                                style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-elevated)' }}
+                                style={{ color: 'rgb(var(--text-primary))', backgroundColor: 'rgb(var(--raised))' }}
                                 className="input-field pr-8 appearance-none cursor-pointer w-36">
                                 {COUNTRY_CODES.map((c) => (
-                                  <option key={c.code} value={c.code} style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)' }}>
+                                  <option key={c.code} value={c.code} style={{ backgroundColor: 'rgb(var(--raised))', color: 'rgb(var(--text-primary))' }}>
                                     {c.country} {c.code}
                                   </option>
                                 ))}
@@ -519,10 +500,10 @@ export default function Settings() {
                           <select
                             value={profileForm.timezone}
                             onChange={(e) => setProfileForm((f) => ({ ...f, timezone: e.target.value }))}
-                            style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-elevated)' }}
+                            style={{ color: 'rgb(var(--text-primary))', backgroundColor: 'rgb(var(--raised))' }}
                             className="input-field">
                             {TIMEZONES.map((tz) => (
-                              <option key={tz} value={tz} style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)' }}>{tz}</option>
+                              <option key={tz} value={tz} style={{ backgroundColor: 'rgb(var(--raised))', color: 'rgb(var(--text-primary))' }}>{tz}</option>
                             ))}
                           </select>
                         </div>
@@ -544,18 +525,11 @@ export default function Settings() {
                   <div className="glass-card p-6 space-y-6">
                     <h2 className="font-semibold text-text-primary">Job Preferences</h2>
 
+                    <ProfessionCard variant="settings" />
+
                     <div className="space-y-2">
                       <label className="text-xs font-medium text-text-secondary uppercase tracking-wider">Target Roles</label>
-                      <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
-                        {POPULAR_ROLES.map((role) => (
-                          <button key={role} onClick={() => toggleItem('targetRoles', role)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border whitespace-nowrap ${
-                              prefForm.targetRoles.includes(role)
-                                ? 'bg-brand-purple/15 border-brand-purple/40 text-brand-purple'
-                                : 'bg-bg-primary/40 border-border text-text-secondary hover:border-border-bright'
-                            }`}>{role}</button>
-                        ))}
-                      </div>
+                      <RolePicker selected={prefForm.targetRoles} onToggle={(role) => toggleItem('targetRoles', role)} />
                     </div>
 
                     <div className="space-y-2">
@@ -676,7 +650,7 @@ export default function Settings() {
                           <button key={theme.value}
                             onClick={() => themeMutation.mutate(theme.value)}
                             className={`p-4 rounded-xl border-2 transition-all text-left space-y-3 ${
-                              (p?.theme_preference || 'dark') === theme.value
+                              currentTheme === theme.value
                                 ? 'border-brand-purple bg-brand-purple/10'
                                 : 'border-border hover:border-border-bright'
                             }`}>
@@ -684,7 +658,7 @@ export default function Settings() {
                               style={{ backgroundColor: theme.bg }}>
                               <div className="w-8 h-2 rounded" style={{ backgroundColor: theme.fg + '40' }} />
                               <div className="w-12 h-2 rounded" style={{ backgroundColor: theme.fg + '60' }} />
-                              {(p?.theme_preference || 'dark') === theme.value && (
+                              {currentTheme === theme.value && (
                                 <CheckCircle className="w-4 h-4 text-brand-purple ml-1" />
                               )}
                             </div>

@@ -11,6 +11,7 @@ import { completeOnboarding } from '../api/userApi.js';
 import useAuthStore from '../store/authStore.js';
 import useUserStore from '../store/userStore.js';
 import ParticleBackground from '../components/ParticleBackground.jsx';
+import RolePicker from '../components/profile/RolePicker.jsx';
 
 const TEMPLATES = [
   {
@@ -97,7 +98,6 @@ const REMOTE_OPTIONS = [
   { value: 'any',     label: 'Open to all' },
 ];
 
-const POPULAR_ROLES = ['Software Engineer', 'Frontend Developer', 'Backend Developer', 'Full Stack Developer', 'Data Scientist', 'Product Manager', 'UI/UX Designer', 'DevOps Engineer', 'QA Engineer', 'Business Analyst'];
 const POPULAR_SKILLS = ['React', 'Node.js', 'Python', 'Java', 'TypeScript', 'SQL', 'AWS', 'Docker', 'Git', 'REST API', 'PostgreSQL', 'MongoDB'];
 const BD_LOCATIONS = ['Dhaka', 'Chittagong', 'Sylhet', 'Rajshahi', 'Khulna', 'Remote', 'Anywhere in Bangladesh'];
 
@@ -273,17 +273,8 @@ export default function Onboarding() {
                 {step === 2 && (
                   <div className="space-y-5">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-text-secondary">Target Roles <span className="text-text-muted">(select all that apply)</span></label>
-                      <div className="flex flex-wrap gap-2">
-                        {POPULAR_ROLES.map((role) => (
-                          <button key={role} onClick={() => toggleItem('targetRoles', role)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                              form.targetRoles.includes(role)
-                                ? 'bg-brand-purple/15 border-brand-purple/40 text-brand-purple'
-                                : 'bg-bg-primary/40 border-border text-text-secondary hover:border-border-bright'
-                            }`}>{role}</button>
-                        ))}
-                      </div>
+                      <label className="text-sm font-medium text-text-secondary">Target Roles <span className="text-text-muted">(pick the jobs you want — any career track)</span></label>
+                      <RolePicker selected={form.targetRoles} onToggle={(role) => toggleItem('targetRoles', role)} />
                     </div>
 
                     <div className="space-y-2">

@@ -15,6 +15,7 @@ import {
   extractCertificationsFromText,
   isKnownJobTitle,
   detectRoleFromCV,
+  detectOccupationFromCV,
   getExpectedSkillsForRole,
   getCuratedPack,
   getQualityExpectedSkills,
@@ -197,13 +198,20 @@ const scoreRoleMatch = (cvText, detectedSkills, cvYears, writing, profile) => {
   const targetRole    = (profile.target_roles && profile.target_roles[0]) || profile.current_title || '';
   const profileSkills = (profile.skills || []).map(normalize);
 
-  // Detect the CV's OWN role from its text
-  const cvRole = detectRoleFromCV(cvText);
+  // Detect the CV's OWN role from its text — curated family first (headline +
+  // role vocabulary), the generic O*NET title search only as a fallback
+  const cvOcc  = detectOccupationFromCV(cvText);
+  const cvRole = cvOcc
+    ? { title: cvOcc.curated || cvOcc.name.toLowerCase(), onet_code: cvOcc.code }
+    : detectRoleFromCV(cvText);
 
   // If the CV's own role differs from the user's target role, base
   // recommendations on the CV's role (O*NET expected skills), not the profile.
   // Priority: curated pack → quality-filtered O*NET (hot tools + non-generic competencies)
-  const curated = cvRole ? getCuratedPack(cvRole.title) : null;
+  // Curated pack only when the CV really is a curated track; O*NET occupations
+  // use their own O*NET skills (a name lookup could guess the wrong track)
+  const curated = cvOcc ? (cvOcc.curated ? getCuratedPack(cvOcc.curated) : null)
+                        : (cvRole ? getCuratedPack(cvRole.title) : null);
   const cvRoleSkills = curated
     ? [...curated.keywords, ...curated.tools].map(normalize)
     : (cvRole ? getQualityExpectedSkills(cvRole.onet_code).map(normalize) : []);

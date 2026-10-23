@@ -17,7 +17,12 @@ const SELECT_FIELDS = `
   COALESCE(j.job_url,  a.job_url)   AS job_url,
   COALESCE(j.location, a.location)  AS location,
   j.deadline, j.is_expired, j.salary_min_bdt, j.salary_max_bdt,
-  jm.relevance_score`;
+  jm.relevance_score,
+  COALESCE((SELECT json_agg(json_build_object(
+              'id', i.id, 'scheduled_at', i.scheduled_at,
+              'round_type', i.round_type, 'prep_notes', i.prep_notes)
+            ORDER BY i.scheduled_at)
+            FROM interviews_scheduled i WHERE i.application_id = a.id), '[]') AS interviews`;
 
 const FROM = `
   FROM applications a
@@ -155,4 +160,73 @@ export const getApplicationStats = async (userId) => {
     follow_ups_due: n(r.follow_ups_due),
     response_rate:  n(r.applied) ? Math.round((n(r.responses) / n(r.applied)) * 100) : 0,
   };
+};
+
+// ── Interviews ────────────────────────────────────────────────────
+export const ROUND_TYPES = ['phone', 'technical', 'hr', 'assessment', 'final', 'other'];
+
+export const addInterview = async (applicationId, userId, { scheduledAt, roundType, prepNotes }) => {
+  const app = await query(
+    `SELECT a.id, COALESCE(j.title, a.job_title) AS title, COALESCE(j.company, a.company) AS company
+     FROM applications a LEFT JOIN jobs j ON j.id = a.job_id
+     WHERE a.id = $1 AND a.user_id = $2`,
+    [applicationId, userId]
+  );
+  if (!app.rows[0]) return null;
+  const { title, company } = app.rows[0];
+  const result = await query(
+    `INSERT INTO interviews_scheduled (user_id, application_id, company, role, scheduled_at, round_type, prep_notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, scheduled_at, round_type, prep_notes`,
+    [userId, applicationId, company || 'Unknown company', title || 'Unknown role', scheduledAt, roundType || null, prepNotes || null]
+  );
+  return result.rows[0];
+};
+
+// Only fields present in `fields` change; '' clears round/notes
+export const updateInterview = async (interviewId, userId, fields) => {
+  const sets = [];
+  const params = [];
+  const add = (column, value) => { params.push(value); sets.push(`${column} = $${params.length}`); };
+  if (fields.scheduledAt !== undefined) add('scheduled_at', fields.scheduledAt);
+  if (fields.roundType   !== undefined) add('round_type',   fields.roundType || null);
+  if (fields.prepNotes   !== undefined) add('prep_notes',   fields.prepNotes || null);
+  if (sets.length === 0) return null;
+  params.push(interviewId, userId);
+  const result = await query(
+    `UPDATE interviews_scheduled SET ${sets.join(', ')}
+     WHERE id = $${params.length - 1} AND user_id = $${params.length}
+     RETURNING id, scheduled_at, round_type, prep_notes`,
+    params
+  );
+  return result.rows[0] || null;
+};
+
+export const deleteInterview = async (interviewId, userId) => {
+  const result = await query(`DELETE FROM interviews_scheduled WHERE id = $1 AND user_id = $2`, [interviewId, userId]);
+  return result.rowCount > 0;
+};
+
+// The soonest interview that hasn't started more than an hour ago (so one
+// in progress still shows), for an application that's still open.
+export const getNextInterview = async (userId) => {
+  const result = await query(
+    `SELECT i.id, i.scheduled_at, i.round_type, i.prep_notes, i.application_id,
+            COALESCE(j.title,   a.job_title, i.role)    AS job_title,
+            COALESCE(j.company, a.company,   i.company) AS company,
+            COALESCE(j.job_url, a.job_url)              AS job_url,
+            a.job_id,
+            COUNT(*) OVER () AS upcoming_count
+     FROM interviews_scheduled i
+     LEFT JOIN applications a ON a.id = i.application_id
+     LEFT JOIN jobs j         ON j.id = a.job_id
+     WHERE i.user_id = $1
+       AND i.scheduled_at > NOW() - INTERVAL '1 hour'
+       AND (a.status IS NULL OR a.status NOT IN ('rejected', 'withdrawn'))
+     ORDER BY i.scheduled_at
+     LIMIT 1`,
+    [userId]
+  );
+  const row = result.rows[0];
+  return row ? { ...row, upcoming_count: parseInt(row.upcoming_count) } : null;
 };

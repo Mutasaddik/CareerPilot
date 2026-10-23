@@ -12,7 +12,9 @@
     "seed:superadmin": "node src/scripts/seedSuperAdmin.js",
     "db:migrate": "node src/scripts/migrate.js",
     "seed:taxonomy": "node src/scripts/seedTaxonomy.js",
-    "seed:rolekeywords": "node src/scripts/seedRoleKeywords.js"
+    "seed:rolekeywords": "node src/scripts/seedRoleKeywords.js",
+    "import:salaries": "node src/scripts/importSalaryBenchmarks.js",
+    "seed:occupations": "node src/scripts/seedOccupations.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",

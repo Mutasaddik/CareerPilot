@@ -20,11 +20,11 @@ const getPasswordStrength = (password) => {
   if (/[A-Z]/.test(password)) score++;
   if (/[0-9]/.test(password)) score++;
   if (/[^A-Za-z0-9]/.test(password)) score++;
-  if (score <= 1) return { score, label: 'Weak', color: '#ef4444' };
-  if (score <= 2) return { score, label: 'Fair', color: '#f59e0b' };
-  if (score <= 3) return { score, label: 'Good', color: '#3b82f6' };
-  if (score <= 4) return { score, label: 'Strong', color: '#22c55e' };
-  return { score, label: 'Very Strong', color: '#22c55e' };
+  if (score <= 1) return { score, label: 'Weak', color: 'rgb(var(--danger))' };
+  if (score <= 2) return { score, label: 'Fair', color: 'rgb(var(--warning))' };
+  if (score <= 3) return { score, label: 'Good', color: 'rgb(var(--info))' };
+  if (score <= 4) return { score, label: 'Strong', color: 'rgb(var(--success))' };
+  return { score, label: 'Very Strong', color: 'rgb(var(--success))' };
 };
 
 const getProfileCompletion = (form) => {
@@ -116,7 +116,7 @@ export default function Register() {
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-text-muted">💡 More info = better job matches!</span>
-              <span className="font-semibold" style={{ color: completion >= 70 ? '#22c55e' : '#f59e0b' }}>
+              <span className="font-semibold" style={{ color: completion >= 70 ? 'rgb(var(--success))' : 'rgb(var(--warning))' }}>
                 {completion}% complete
               </span>
             </div>
@@ -189,7 +189,7 @@ export default function Register() {
                   <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map((i) => (
                       <div key={i} className="flex-1 h-1 rounded-full transition-all duration-300"
-                        style={{ background: i <= pwStrength.score ? pwStrength.color : 'rgba(255,255,255,0.08)' }} />
+                        style={{ background: i <= pwStrength.score ? pwStrength.color : 'rgb(var(--fg) / 0.1)' }} />
                     ))}
                   </div>
                   <p className="text-xs" style={{ color: pwStrength.color }}>{pwStrength.label}</p>

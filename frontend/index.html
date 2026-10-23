@@ -11,6 +11,15 @@
     <meta property="og:description" content="Land better jobs faster with AI-powered career intelligence." />
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Apply the user's remembered theme before anything is drawn (see src/utils/theme.js) -->
+    <script>
+      try {
+        if (localStorage.getItem('careerpilot-theme') === 'light') {
+          document.documentElement.classList.remove('dark');
+          document.documentElement.classList.add('light');
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

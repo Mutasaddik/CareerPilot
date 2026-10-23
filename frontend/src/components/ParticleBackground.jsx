@@ -94,7 +94,7 @@ export default function ParticleBackground({ className = '' }) {
   return (
     <canvas
       ref={canvasRef}
-      className={`absolute inset-0 w-full h-full pointer-events-none ${className}`}
+      className={`particle-canvas absolute inset-0 w-full h-full pointer-events-none ${className}`}
       aria-hidden="true"
     />
   );

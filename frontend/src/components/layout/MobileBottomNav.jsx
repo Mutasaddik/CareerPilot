@@ -1,6 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Briefcase, KanbanSquare, Bell, User,
+  LayoutDashboard, Briefcase, KanbanSquare, FileText, User,
 } from 'lucide-react';
 
 // Five primary tabs per the spec's mobile navigation.
@@ -8,7 +8,7 @@ const TABS = [
   { to: '/dashboard-home', label: 'Home',    icon: LayoutDashboard },
   { to: '/jobs',           label: 'Jobs',    icon: Briefcase },
   { to: '/tracker',        label: 'Tracker', icon: KanbanSquare },
-  { to: '/alerts',         label: 'Alerts',  icon: Bell },
+  { to: '/cv',             label: 'CV',      icon: FileText },
   { to: '/settings',       label: 'Profile', icon: User },
 ];
 
@@ -19,7 +19,7 @@ export default function MobileBottomNav() {
     <nav
       data-testid="mobile-bottom-nav"
       className="md:hidden fixed bottom-0 inset-x-0 z-40 h-16
-                 bg-bg-secondary/90 backdrop-blur-xl border-t border-white/8
+                 bg-bg-secondary/90 backdrop-blur-xl border-t border-fg/8
                  flex items-center justify-around px-2"
     >
       {TABS.map(({ to, label, icon: Icon }) => {

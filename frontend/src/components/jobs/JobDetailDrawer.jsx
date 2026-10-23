@@ -11,6 +11,7 @@ import { fetchJobById, saveJob, submitJobFeedback } from '../../api/jobApi.js';
 import { createCVRewrite } from '../../api/cvApi.js';
 import { trackJob } from '../../api/applicationApi.js';
 import useJobStore from '../../store/jobStore.js';
+import SalaryTag from './SalaryTag.jsx';
 
 // ── Tab definitions ───────────────────────────────────────────────
 const TABS = ['Match Analysis', 'CV Gap', 'Company Intel', 'Interview Intel'];
@@ -24,7 +25,7 @@ const ScoreBar = ({ label, value, max = 100, color = 'cyan' }) => {
         <span className="text-text-secondary">{label}</span>
         <span className="text-text-primary font-semibold">{value}%</span>
       </div>
-      <div className="w-full bg-white/8 rounded-full h-1.5 overflow-hidden">
+      <div className="w-full bg-fg/8 rounded-full h-1.5 overflow-hidden">
         <motion.div
           className={`h-full rounded-full bg-gradient-to-r ${colors[color] || colors.cyan}`}
           initial={{ width: 0 }}
@@ -187,7 +188,7 @@ const CVGapTab = ({ job }) => {
           <h4 className="text-text-primary font-semibold text-sm mb-3">Keywords in Job Description</h4>
           <div className="flex flex-wrap gap-1.5">
             {uniqueKw.map((kw) => (
-              <span key={kw} className="px-2 py-0.5 bg-white/5 border border-white/10 text-text-muted text-xs rounded">{kw}</span>
+              <span key={kw} className="px-2 py-0.5 bg-fg/5 border border-fg/10 text-text-muted text-xs rounded">{kw}</span>
             ))}
           </div>
         </div>
@@ -234,20 +235,17 @@ const CompanyIntelTab = ({ job }) => {
               <span className="text-text-primary capitalize">{job.experience_level}</span>
             </div>
           )}
-          {job.salary_min_bdt && (
-            <div className="flex justify-between text-sm">
+          {job.salary?.min && (
+            <div className="flex justify-between items-center text-sm gap-3">
               <span className="text-text-secondary">Salary Range</span>
-              <span className="text-green-400 font-medium">
-                {"৳" + (job.salary_min_bdt / 1000).toFixed(0) + "k"}
-                {job.salary_max_bdt ? "–" + (job.salary_max_bdt / 1000).toFixed(0) + "k" : "+"} BDT
-              </span>
+              <SalaryTag salary={job.salary} className="text-green-400 font-medium" />
             </div>
           )}
           <div className="flex justify-between text-sm">
             <span className="text-text-secondary">Sources</span>
             <div className="flex gap-1">
               {(job.sources || []).map((s) => (
-                <span key={s} className="px-1.5 py-0.5 bg-white/5 border border-white/10 text-xs text-text-muted rounded">{s}</span>
+                <span key={s} className="px-1.5 py-0.5 bg-fg/5 border border-fg/10 text-xs text-text-muted rounded">{s}</span>
               ))}
             </div>
           </div>
@@ -305,6 +303,8 @@ export default function JobDetailDrawer({ job, onClose }) {
       setApplyConfirm(false);
       updateJob(job.id, { application_status: 'applied' });
       qc.invalidateQueries({ queryKey: ['applications'] });
+      qc.invalidateQueries({ queryKey: ['jobs'] }); // applied jobs leave the dashboard's recommendations
+      qc.invalidateQueries({ queryKey: ['closing-soon'] }); // …and the closing-soon / to-do lists
     },
   });
   const appStatus = job?.application_status;
@@ -320,14 +320,14 @@ export default function JobDetailDrawer({ job, onClose }) {
       animate={{ x: 0 }}
       exit={{ x: '100%' }}
       transition={{ type: 'spring', damping: 28, stiffness: 260 }}
-      className="fixed right-0 top-0 h-full w-full md:w-[60%] bg-[#0d1526]/98 backdrop-blur-xl border-l border-white/10 z-40 flex flex-col shadow-2xl"
+      className="fixed right-0 top-0 h-full w-full md:w-[60%] bg-bg-secondary border-l border-fg/10 z-40 flex flex-col shadow-e3"
     >
       {/* Header */}
-      <div className="p-5 border-b border-white/8 shrink-0">
+      <div className="p-5 border-b border-fg/8 shrink-0">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="flex items-start gap-3 min-w-0">
             {/* Company logo */}
-            <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden">
+            <div className="w-12 h-12 rounded-xl bg-fg/5 border border-fg/10 flex items-center justify-center shrink-0 overflow-hidden">
               {job.company_logo_url
                 ? <img src={job.company_logo_url} alt={job.company} className="w-full h-full object-contain p-1" onError={(e) => e.target.style.display='none'} />
                 : <span className="text-text-primary font-bold text-lg">{(job.company||'?')[0]}</span>
@@ -341,19 +341,15 @@ export default function JobDetailDrawer({ job, onClose }) {
                   <MapPin className="w-3 h-3" />{job.location}
                 </span>
                 {job.is_remote && <span className="flex items-center gap-1 text-green-400 text-xs"><Wifi className="w-3 h-3" />Remote</span>}
-                {job.salary_min_bdt && (
-                  <span className="text-green-400 text-xs font-medium">
-                    ৳{(job.salary_min_bdt/1000).toFixed(0)}k{job.salary_max_bdt ? `–${(job.salary_max_bdt/1000).toFixed(0)}k` : '+'} BDT
-                  </span>
-                )}
+                <SalaryTag salary={job.salary} className="text-green-400 text-xs font-medium" />
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button onClick={() => saveMut.mutate(!isSaved)} className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-text-muted hover:text-brand-cyan transition-colors">
+            <button onClick={() => saveMut.mutate(!isSaved)} className="p-2 rounded-lg bg-fg/5 hover:bg-fg/10 text-text-muted hover:text-brand-cyan transition-colors">
               {isSaved ? <BookmarkCheck className="w-4 h-4 text-brand-cyan" /> : <Bookmark className="w-4 h-4" />}
             </button>
-            <button onClick={onClose} className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-text-muted hover:text-text-primary transition-colors">
+            <button onClick={onClose} className="p-2 rounded-lg bg-fg/5 hover:bg-fg/10 text-text-muted hover:text-text-primary transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -377,7 +373,7 @@ export default function JobDetailDrawer({ job, onClose }) {
                 {trackMut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Yes ✓'}
               </button>
               <button onClick={() => setApplyConfirm(false)}
-                className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-text-muted text-sm">
+                className="px-4 py-2 rounded-xl bg-fg/5 border border-fg/10 text-text-muted text-sm">
                 No
               </button>
             </motion.div>
@@ -408,7 +404,7 @@ export default function JobDetailDrawer({ job, onClose }) {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-white/8 shrink-0 px-2">
+      <div className="flex border-b border-fg/8 shrink-0 px-2">
         {TABS.map((tab, i) => (
           <button
             key={tab}
@@ -445,7 +441,7 @@ export default function JobDetailDrawer({ job, onClose }) {
 
       {/* Job description at bottom */}
       {job.description && (
-        <div className="border-t border-white/8 p-5 max-h-48 overflow-y-auto shrink-0">
+        <div className="border-t border-fg/8 p-5 max-h-48 overflow-y-auto shrink-0">
           <h4 className="text-text-secondary text-xs font-medium uppercase tracking-wider mb-2">Job Description</h4>
           <p className="text-text-muted text-xs leading-relaxed whitespace-pre-wrap">{job.description.slice(0, 1200)}{job.description.length > 1200 ? '…' : ''}</p>
         </div>

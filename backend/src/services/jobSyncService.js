@@ -7,9 +7,9 @@ import { query } from '../models/db.js';
 import { deleteCachePattern } from '../models/redis.js';
 import { scrapeAllSources } from './scraperService.js';
 import { scrapeBDTechJobs } from './bdTechJobsService.js';
-import { deduplicateInMemory, upsertJobs, markExpiredJobs, expireMissingJobs } from './deduplicationService.js';
+import { deduplicateInMemory, upsertJobs, markExpiredJobs, expireMissingJobs, classifyStoredJobs } from './deduplicationService.js';
 import { logScraperRun } from './scraperHealthService.js';
-import { recalculateAllUsers, recalculateUserMatches } from './matchingService.js';
+import { recalculateAllUsers, recalculateUserMatches, getUserContext, buildUserProfile } from './matchingService.js';
 import logger from './loggerService.js';
 
 const SYNC_INTERVAL_HOURS = parseFloat(process.env.JOB_SYNC_INTERVAL_HOURS || '6');
@@ -24,14 +24,18 @@ const DEFAULT_KEYWORDS = [
   'customer service', 'hr executive', 'accountant',
   'marketing executive', 'sales executive', 'digital marketing',
   'merchandiser', 'event coordinator', 'management trainee',
+  'operations executive', 'client relations', 'banking officer', 'relationship officer',
 ];
 
 // Users' own target roles first — JSearch's small daily quota is spent on
 // the first keywords, so real demand should come before the baseline.
 const buildSyncKeywords = async () => {
   const result = await query(
-    `SELECT DISTINCT LOWER(TRIM(role)) AS role
-     FROM user_profiles, UNNEST(target_roles) AS role
+    `SELECT DISTINCT LOWER(TRIM(role)) AS role FROM (
+       SELECT confirmed_role AS role FROM user_profiles WHERE confirmed_role IS NOT NULL
+       UNION ALL
+       SELECT UNNEST(target_roles) FROM user_profiles
+     ) r
      WHERE role IS NOT NULL AND TRIM(role) <> ''`
   );
   const seen = new Set();
@@ -70,6 +74,7 @@ export const runJobSync = async ({ keywords } = {}) => {
     const { inserted, updated } = await storeJobs([...bdtech, ...keywordJobs]);
 
     await markExpiredJobs();
+    await classifyStoredJobs(); // catches any job still without an occupation
     if (bdtech.length > 0) {
       await expireMissingJobs('BDTechJobs', bdtech.map((j) => j.job_url).filter(Boolean));
     }
@@ -100,21 +105,13 @@ export const runJobSync = async ({ keywords } = {}) => {
 // Searches the sources for this user's roles, then rematches them.
 export const refreshJobsForUser = async (userId) => {
   try {
-    const result = await query(
-      `SELECT up.target_roles, u.current_title,
-              c.analysis_json->'detected'->>'target_role' AS detected_role
-       FROM users u
-       LEFT JOIN user_profiles up ON up.user_id = u.id
-       LEFT JOIN cvs c ON c.user_id = u.id AND c.is_primary = TRUE
-       WHERE u.id = $1`,
-      [userId]
-    );
-    const row = result.rows[0] || {};
-    const keywords = [...new Set(
-      [...(row.target_roles || []), row.current_title, row.detected_role]
-        .filter(Boolean)
-        .map((k) => k.trim().toLowerCase())
-    )].slice(0, 3);
+    // Search for the role the user is actually matched to (their target role
+    // when the CV supports it, otherwise what the CV shows), plus its titles.
+    const profile = buildUserProfile(await getUserContext(userId));
+    const pack = profile.userPack;
+    const keywords = pack
+      ? [...new Set([pack.role_name, ...(pack.title_synonyms || [])].map((k) => k.toLowerCase()))].slice(0, 3)
+      : [];
 
     if (keywords.length > 0) {
       const { inserted, updated } = await storeJobs(await scrapeAllSources(keywords));

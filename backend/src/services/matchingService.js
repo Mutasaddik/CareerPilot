@@ -5,7 +5,11 @@
 // ════════════════════════════════════════════════════════════════
 import { query } from '../models/db.js';
 import { getCache, setCache, deleteCachePattern } from '../models/redis.js';
-import { extractSkillsFromText, detectRoleFromCV, getCuratedPack, getCuratedPacksRaw } from './taxonomyService.js';
+import {
+  extractSkillsFromText, getCuratedPack, cvSupportsRole,
+  classifyOccupation, occupationFromKey, detectOccupationFromCV, getOccupationPack, socRelation,
+} from './taxonomyService.js';
+import { attachSalaries } from './salaryService.js';
 import logger from './loggerService.js';
 
 const norm       = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -14,12 +18,12 @@ const hasTerm    = (text, term) =>
   new RegExp(`(^|[^a-z0-9])${escapeRe(norm(term))}($|[^a-z0-9])`, 'i').test(text);
 
 // ── Get user's primary CV + profile ──────────────────────────────
-const getUserContext = async (userId) => {
+export const getUserContext = async (userId) => {
   try {
     const result = await query(
       `SELECT
          u.current_title, u.experience_years,
-         up.target_roles, up.skills, up.salary_min_bdt, up.salary_max_bdt,
+         up.target_roles, up.skills, up.salary_min_bdt, up.salary_max_bdt, up.confirmed_role,
          up.job_type, up.remote_preference,
          c.extracted_text, c.ats_score, c.analysis_json
        FROM users u
@@ -35,10 +39,8 @@ const getUserContext = async (userId) => {
       const analysis = typeof ctx.analysis_json === 'string'
         ? JSON.parse(ctx.analysis_json) : ctx.analysis_json;
 
-      // Use detected target role from ATS engine
-      if (!ctx.target_roles?.length && analysis.detected?.target_role) {
-        ctx.target_roles = [analysis.detected.target_role];
-      }
+      // (The CV's role is detected from the CV text itself in buildUserProfile,
+      //  not copied here — a guessed role must not look like the user's choice.)
       // Use detected skills from CV
       if (!ctx.skills?.length && analysis.detected?.skills?.length) {
         ctx.skills = analysis.detected.skills.slice(0, 20);
@@ -67,17 +69,19 @@ const RELATED = {
   'mobile developer':       ['software engineer','frontend developer'],
   'business analyst':       ['data analyst','project manager'],
   'data analyst':           ['business analyst'],
-  'marketing specialist':   ['sales executive','content writer'],
-  'sales executive':        ['marketing specialist','customer service'],
-  'customer service':       ['sales executive'],
+  'marketing specialist':   ['sales executive','content writer','management trainee'],
+  'sales executive':        ['marketing specialist','customer service','banking officer'],
+  'customer service':       ['sales executive','operations executive'],
   'merchandiser':           [],
   'hr executive':           [],
   'accountant':             [],
   'graphic designer':       ['content writer'],
   'content writer':         ['marketing specialist','graphic designer'],
   'project manager':        ['business analyst'],
-  'management trainee':     [],
+  'management trainee':     ['operations executive','marketing specialist','sales executive','banking officer','business analyst'],
   'event coordinator':      ['marketing specialist'],
+  'operations executive':   ['management trainee', 'customer service', 'banking officer', 'sales executive'],
+  'banking officer':        ['sales executive', 'customer service', 'operations executive', 'management trainee'],
 };
 
 
@@ -91,15 +95,40 @@ export const buildUserProfile = (userCtx) => {
   const cvSkills   = extractSkillsFromText(cvText);
   const profSkills = (userCtx.skills || []).map(norm);
   const cvYears    = parseFloat(userCtx.experience_years) || 0;
-  const targetRole = (userCtx.target_roles?.[0] || userCtx.current_title || '').toLowerCase();
-  const effectiveTarget = targetRole || detectRoleFromCV(userCtx.extracted_text || '')?.title || '';
-  const userPack   = getCuratedPack(effectiveTarget);
+  // Which occupation to match for, most trusted first:
+  //   1. the role the user confirmed ("Yes, that's me") — ground truth
+  //   2. their chosen target role, when the CV supports it
+  //   3. what the CV itself shows
+  // (A marketing CV with "Software Engineer" picked in onboarding gets
+  //  marketing/operations jobs, and a note explaining why.)
+  const rawCv      = userCtx.extracted_text || '';
+  const confirmed  = (userCtx.confirmed_role || '').trim();
+  const chosenRole = (userCtx.target_roles?.[0] || userCtx.current_title || '').trim();
+  const cvOcc      = rawCv ? detectOccupationFromCV(rawCv) : null;
+  let userOcc = null, roleSource = null, roleNote = null;
+  if (confirmed) {
+    // A confirmed role we can't place still wins — matched by its name
+    userOcc = classifyOccupation(confirmed) || { key: `custom:${confirmed.toLowerCase()}`, code: null, name: confirmed, curated: null };
+    roleSource = 'confirmed';
+  } else {
+    const chosenOcc = chosenRole ? classifyOccupation(chosenRole) : null;
+    const supported = chosenOcc && rawCv ? cvSupportsRole(rawCv, chosenRole) : null;
+    if (chosenOcc && (supported !== false || !cvOcc)) { userOcc = chosenOcc; roleSource = 'target'; }
+    else if (cvOcc) {
+      userOcc = cvOcc; roleSource = 'cv';
+      if (chosenOcc && supported === false) roleNote = { chosen_role: chosenOcc.name, matched_role: cvOcc.name };
+    }
+  }
+  const userPack = userOcc?.key.startsWith('custom:')
+    ? { role_name: confirmed.toLowerCase(), title_synonyms: [confirmed.toLowerCase()], keywords: [], tools: [] }
+    : getOccupationPack(userOcc);
   return {
-    cvText, cvSkills, cvYears, userPack,
-    userFamily:    userPack ? userPack.role_name : null,
+    cvText, cvSkills, cvYears, userPack, roleNote, userOcc, roleSource, cvOcc,
+    userFamily:    userOcc ? (userOcc.curated || userOcc.name.toLowerCase()) : null,
     allUserSkills: [...new Set([...cvSkills.map(norm), ...profSkills])],
     // The track's own vocabulary — proves a job ad is really in the user's field
-    domainTerms:   userPack ? [...new Set([...(userPack.keywords || []), ...(userPack.tools || [])].map(norm))] : [],
+    // (only for curated tracks, whose short titles like "QA" are ambiguous)
+    domainTerms:   userPack && userOcc?.curated ? [...new Set([...(userPack.keywords || []), ...(userPack.tools || [])].map(norm))] : [],
     hasCerts:      /certif|istqb|aws certified|pmp|cfa/i.test(cvText),
     userSenior:    cvYears >= 4 || /senior/i.test(cvText.slice(0, 600)),
   };
@@ -111,19 +140,28 @@ export const scoreJob = (job, userCtx, profile = buildUserProfile(userCtx)) => {
   const jobTitle = norm(job.title);
   const { cvSkills, cvYears, userPack, userFamily, allUserSkills } = profile;
 
-  // ── Step 2: Job role family (classify from JOB title) ────────────
-  const jobPack = getCuratedPack(jobTitle);
-  const jobFamily = jobPack ? jobPack.role_name : null;
+  // ── Step 2: the job's occupation (stored when the job was saved) ──
+  const jobOcc    = job.occupation_key ? occupationFromKey(job.occupation_key) : classifyOccupation(job.title);
+  const jobFamily = jobOcc ? (jobOcc.curated || jobOcc.name.toLowerCase()) : null;
+  const userOcc   = profile.userOcc;
 
-  // ── Step 3: Family gate (YOUR RULE: never cross career tracks) ───
+  // ── Step 3: Career gate (never cross career tracks) ──────────────
+  // Two curated tracks: our fine-tuned related-tracks list. Anything else:
+  // the SOC hierarchy (same occupation / related / loosely related / not).
   let familyStatus = 'unknown';
-  if (userFamily && jobFamily) {
-    if (userFamily === jobFamily) familyStatus = 'same';
-    else if ((RELATED[userFamily] || []).includes(jobFamily)) familyStatus = 'related';
-    else familyStatus = 'different';
-  } else if (userFamily && !jobFamily) {
+  if (userOcc && jobOcc) {
+    if (userOcc.curated && jobOcc.curated) {
+      if (userOcc.curated === jobOcc.curated) familyStatus = 'same';
+      else if ((RELATED[userOcc.curated] || []).includes(jobOcc.curated)) familyStatus = 'related';
+      else familyStatus = 'different';
+    } else if (userOcc.key === jobOcc.key) {
+      familyStatus = 'same';
+    } else {
+      familyStatus = socRelation(userOcc.code, jobOcc.code) || 'different';
+    }
+  } else if (userOcc && !jobOcc && userPack) {
     // Job title unclassified — evidence-based: count user-pack signals in the JD
-    const probe = [...userPack.title_synonyms, ...userPack.keywords].map(norm);
+    const probe = [...(userPack.title_synonyms || []), ...(userPack.keywords || [])].map(norm);
     const hits = probe.filter((p) => hasTerm(jdText, p)).length;
     familyStatus = hits >= 3 ? 'related' : hits >= 1 ? 'weak' : 'different';
   }
@@ -131,7 +169,7 @@ export const scoreJob = (job, userCtx, profile = buildUserProfile(userCtx)) => {
   // A matching title isn't enough: "QA" in a garments ad or "Automation
   // Engineer" at a steel plant is a different career. If the ad is long enough
   // to judge, it must use the user's field vocabulary to count as same/related.
-  if ((familyStatus === 'same' || familyStatus === 'related') && jdText.length >= DOMAIN_CHECK_MIN_CHARS) {
+  if ((familyStatus === 'same' || familyStatus === 'related') && profile.domainTerms.length && jdText.length >= DOMAIN_CHECK_MIN_CHARS) {
     const domainHits = profile.domainTerms.filter((t) => hasTerm(jdText, t)).length;
     if (domainHits === 0)     familyStatus = 'different';
     else if (domainHits < 2)  familyStatus = 'weak';
@@ -278,7 +316,7 @@ export const recalculateUserMatches = async (userId) => {
     }
 
     const jobs = await query(
-      `SELECT id, title, description, salary_min_bdt, salary_max_bdt
+      `SELECT id, title, description, salary_min_bdt, salary_max_bdt, occupation_key
        FROM jobs WHERE is_expired = FALSE ORDER BY scraped_at DESC LIMIT $1`,
       [RECALC_JOB_LIMIT]
     );
@@ -312,6 +350,8 @@ export const recalculateUserMatches = async (userId) => {
 
     logger.info('Matches recalculated', { userId, jobsScored: jobs.rows.length });
     await deleteCachePattern(`matches:${userId}:*`);
+    await deleteCachePattern(`market:${userId}`); // market card is built from the same profile + jobs
+    await deleteCachePattern(`certs:${userId}`);
     return jobs.rows.length;
   } catch (err) {
     logger.error('recalculateUserMatches failed', { error: err.message, userId });
@@ -372,7 +412,7 @@ export const getMatchedJobsForUser = async (userId, { limit = 20, offset = 0, mi
       filterParams
     );
 
-    const data = { jobs: result.rows, total: parseInt(total.rows[0].count), limit, offset };
+    const data = { jobs: await attachSalaries(result.rows), total: parseInt(total.rows[0].count), limit, offset };
     await setCache(cacheKey, JSON.stringify(data), 300); // 5 min cache
     return data;
   } catch (err) {

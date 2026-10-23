@@ -90,7 +90,7 @@ export default function CVScoreGauge({ score, isAnalyzing = false, onRescan, cvN
           <button
             onClick={onRescan}
             disabled={isAnalyzing}
-            className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-brand-cyan transition-colors disabled:opacity-50 bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg border border-white/10"
+            className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-brand-cyan transition-colors disabled:opacity-50 bg-fg/5 hover:bg-fg/10 px-3 py-1.5 rounded-lg border border-fg/10"
           >
             <RefreshCw className={`w-3 h-3 ${isAnalyzing ? 'animate-spin' : ''}`} />
             {isAnalyzing ? 'Analyzing…' : 'Rescan'}
@@ -107,7 +107,7 @@ export default function CVScoreGauge({ score, isAnalyzing = false, onRescan, cvN
             cy={radius + stroke / 2}
             r={normalR}
             fill="none"
-            stroke="rgba(255,255,255,0.06)"
+            stroke="rgb(var(--fg) / 0.08)"
             strokeWidth={stroke}
           />
           {/* Progress */}
@@ -116,7 +116,7 @@ export default function CVScoreGauge({ score, isAnalyzing = false, onRescan, cvN
             cy={radius + stroke / 2}
             r={normalR}
             fill="none"
-            stroke={isAnalyzing ? '#334155' : colors.stroke}
+            stroke={isAnalyzing ? 'rgb(var(--fg) / 0.2)' : colors.stroke}
             strokeWidth={stroke}
             strokeLinecap="round"
             strokeDasharray={circ}
@@ -153,7 +153,7 @@ export default function CVScoreGauge({ score, isAnalyzing = false, onRescan, cvN
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium ${colors.bg} ${colors.text} border border-white/10`}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium ${colors.bg} ${colors.text} border border-fg/10`}
           >
             {colors.label}
           </motion.div>
@@ -168,7 +168,7 @@ export default function CVScoreGauge({ score, isAnalyzing = false, onRescan, cvN
             <span>50</span>
             <span>100</span>
           </div>
-          <div className="w-full bg-white/8 rounded-full h-1.5 overflow-hidden">
+          <div className="w-full bg-fg/8 rounded-full h-1.5 overflow-hidden">
             <motion.div
               className="h-full rounded-full"
               style={{ background: `linear-gradient(90deg, ${colors.stroke}88, ${colors.stroke})` }}

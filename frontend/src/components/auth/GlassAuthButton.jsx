@@ -31,11 +31,11 @@ export default function GlassAuthButton({
       'bg-brand-cyan/90 text-bg-primary hover:bg-brand-cyan ' +
       'shadow-[0_4px_20px_-4px_rgba(34,211,238,0.4)] hover:shadow-[0_6px_28px_-4px_rgba(34,211,238,0.55)]',
     ghost:
-      'bg-white/5 border border-white/10 text-text-primary ' +
-      'hover:bg-white/10 hover:border-white/20',
+      'bg-fg/5 border border-fg/10 text-text-primary ' +
+      'hover:bg-fg/10 hover:border-fg/20',
     social:
-      'bg-white/5 border border-white/10 text-text-primary ' +
-      'hover:bg-white/[0.08] hover:border-white/20',
+      'bg-fg/5 border border-fg/10 text-text-primary ' +
+      'hover:bg-fg/[0.08] hover:border-fg/20',
   };
 
   return (

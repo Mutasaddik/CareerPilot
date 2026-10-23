@@ -33,7 +33,8 @@ const PACKS = [
     ['requirements gathering','business requirements document','functional requirements','gap analysis','stakeholder management','process improvement','business process mapping','user stories','use cases','workflow analysis','uat','agile','scrum','root cause analysis'],
     ['jira','confluence','microsoft visio','lucidchart','sql','microsoft excel','power bi']],
   ['marketing specialist',
-    ['marketing specialist','digital marketer','digital marketing executive','marketing executive','brand executive','marketing officer'],
+    ['marketing specialist','digital marketer','digital marketing executive','marketing executive','brand executive','marketing officer',
+     'marketing graduate','marketing associate','marketing coordinator','marketing manager','brand associate','brand manager','trade marketing executive'],
     ['digital marketing','content marketing','seo','sem','ppc','social media marketing','campaign management','brand management','email marketing','lead generation','marketing analytics','conversion optimization','market research','consumer behavior'],
     ['google analytics','google ads','meta ads manager','hubspot','semrush','mailchimp','canva','microsoft excel']],
   ['sales executive',
@@ -45,7 +46,7 @@ const PACKS = [
     ['event planning','vendor coordination','budget management','logistics coordination','sponsorship management','on-site management','promotional campaigns','stakeholder communication','timeline management','brand activation','public relations'],
     ['microsoft excel','microsoft powerpoint','canva','google workspace','social media platforms']],
   ['management trainee',
-    ['management trainee','mto','management trainee officer','graduate trainee'],
+    ['management trainee','mto','management trainee officer','graduate trainee','trainee officer','young professional','graduate management trainee'],
     ['leadership','team collaboration','business operations','strategic planning','problem solving','data analysis','project coordination','process improvement','reporting','stakeholder coordination','decision making'],
     ['microsoft excel','microsoft powerpoint','power bi','google workspace']],
   ['data analyst',
@@ -65,7 +66,7 @@ const PACKS = [
     ['customer support','complaint resolution','ticket management','communication skills','customer satisfaction','crm','active listening','escalation handling','product knowledge'],
     ['zendesk','freshdesk','crm software','microsoft excel']],
   ['graphic designer',
-    ['graphic designer','visual designer','creative designer','ui designer'],
+    ['graphic designer','visual designer','creative designer','ui designer','graphics designer'],
     ['visual design','branding','typography','layout design','social media creatives','print design','design systems','creative direction'],
     ['adobe photoshop','adobe illustrator','figma','canva','adobe indesign','after effects']],
   ['content writer',
@@ -80,6 +81,20 @@ const PACKS = [
     ['devops engineer','site reliability engineer','sre','cloud engineer','infrastructure engineer'],
     ['ci/cd','infrastructure as code','containerization','monitoring','automation','cloud architecture','deployment pipelines','incident management'],
     ['docker','kubernetes','jenkins','aws','terraform','linux','git','ansible','prometheus']],
+  // Operations / client relations — common for BBA graduates in Bangladesh
+  ['operations executive',
+    ['operations executive','operations officer','operations coordinator','operations associate','operations manager',
+     'client relations','client relations officer','client relations executive','client service executive','admin and operations executive'],
+    ['operations coordination','process improvement','stakeholder management','client servicing','client relations','vendor management',
+     'logistics coordination','scheduling','documentation','compliance','reporting','service delivery','sop','inventory management','data entry'],
+    ['microsoft excel','microsoft office','google workspace','erp software','crm']],
+  // Banking — one of the largest graduate job categories in Bangladesh
+  ['banking officer',
+    ['banking officer','relationship officer','relationship manager','relationship executive','probationary officer','junior officer',
+     'cash officer','credit officer','branch operations officer','banking'],
+    ['retail banking','corporate banking','sme banking','credit analysis','loan processing','account opening','kyc','aml',
+     'customer relationship','cross selling','deposit mobilization','branch operations','remittance','trade finance','financial products'],
+    ['core banking','t24','finacle','flexcube','microsoft excel','crm']],
 ];
 
 const run = async () => {

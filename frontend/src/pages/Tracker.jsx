@@ -7,11 +7,12 @@ import {
 } from 'lucide-react';
 import {
   fetchApplications, createApplication, updateApplication, deleteApplication,
+  addInterview, deleteInterview,
 } from '../api/applicationApi.js';
 
 // ── Stages ────────────────────────────────────────────────────────
 const STAGES = [
-  { key: 'saved',      label: 'Saved',      color: 'text-slate-300 bg-white/5 border-white/10' },
+  { key: 'saved',      label: 'Saved',      color: 'text-slate-300 bg-fg/5 border-fg/10' },
   { key: 'applied',    label: 'Applied',    color: 'text-blue-300 bg-blue-500/10 border-blue-500/20' },
   { key: 'screening',  label: 'Screening',  color: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/20' },
   { key: 'assessment', label: 'Assessment', color: 'text-purple-300 bg-purple-500/10 border-purple-500/20' },
@@ -49,7 +50,7 @@ const followUpBadge = (app) => {
   const days = daysFromToday(app.follow_up_date);
   if (days < 0)   return { text: `Follow up overdue ${-days}d`, cls: 'text-red-300 bg-red-500/10 border-red-500/20' };
   if (days === 0) return { text: 'Follow up today',             cls: 'text-amber-300 bg-amber-500/10 border-amber-500/20' };
-  return            { text: `Follow up in ${days}d`,             cls: 'text-text-muted bg-white/5 border-white/10' };
+  return            { text: `Follow up in ${days}d`,             cls: 'text-text-muted bg-fg/5 border-fg/10' };
 };
 
 // ── Stats strip ───────────────────────────────────────────────────
@@ -81,7 +82,7 @@ function AppCard({ app, onOpen, onStatus }) {
   return (
     <motion.div layout
       onClick={() => onOpen(app.id)}
-      className="glass-card p-3 cursor-pointer border border-white/8 hover:border-white/20 transition-colors space-y-2"
+      className="glass-card p-3 cursor-pointer border border-fg/8 hover:border-fg/20 transition-colors space-y-2"
     >
       <div>
         <p className="text-text-primary text-sm font-medium leading-snug">{app.job_title}</p>
@@ -111,6 +112,101 @@ function AppCard({ app, onOpen, onStatus }) {
   );
 }
 
+// ── Interviews (inside the detail panel) ──────────────────────────
+const ROUNDS = [
+  { key: 'phone',      label: 'Phone screen' },
+  { key: 'technical',  label: 'Technical' },
+  { key: 'assessment', label: 'Assessment / test' },
+  { key: 'hr',         label: 'HR' },
+  { key: 'final',      label: 'Final' },
+  { key: 'other',      label: 'Other' },
+];
+const roundLabel = (k) => ROUNDS.find((r) => r.key === k)?.label || 'Interview';
+const fmtDateTime = (iso) => new Date(iso).toLocaleString('en-GB', {
+  weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+});
+
+function InterviewsSection({ app }) {
+  const qc = useQueryClient();
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ when: '', roundType: 'technical', prepNotes: '' });
+  const interviews = Array.isArray(app.interviews) ? app.interviews : [];
+  const now = Date.now();
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['applications'] });
+    qc.invalidateQueries({ queryKey: ['next-interview'] });
+  };
+  const addMut = useMutation({
+    // datetime-local is the user's local time; send it as an absolute instant
+    mutationFn: () => addInterview(app.id, {
+      scheduledAt: new Date(form.when).toISOString(),
+      roundType:   form.roundType,
+      prepNotes:   form.prepNotes,
+    }),
+    onSuccess: () => { refresh(); setAdding(false); setForm({ when: '', roundType: 'technical', prepNotes: '' }); },
+  });
+  const delMut = useMutation({ mutationFn: deleteInterview, onSuccess: refresh });
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-text-secondary text-xs">Interviews</p>
+        {!adding && (
+          <button type="button" onClick={() => setAdding(true)} className="text-xs text-brand-cyan flex items-center gap-1 hover:underline">
+            <Plus className="w-3 h-3" /> Add interview
+          </button>
+        )}
+      </div>
+
+      {interviews.length === 0 && !adding && (
+        <p className="text-text-muted text-xs">No interviews scheduled for this application.</p>
+      )}
+      {interviews.map((iv) => {
+        const past = new Date(iv.scheduled_at).getTime() < now - 60 * 60 * 1000;
+        return (
+          <div key={iv.id} className={`flex items-start gap-2 p-2.5 rounded-lg border ${past ? 'border-fg/5 opacity-60' : 'border-amber-500/20 bg-amber-500/5'}`}>
+            <CalendarClock className={`w-4 h-4 mt-0.5 shrink-0 ${past ? 'text-text-muted' : 'text-amber-300'}`} />
+            <div className="flex-1 min-w-0">
+              <p className="text-text-primary text-xs font-medium">{roundLabel(iv.round_type)} · {fmtDateTime(iv.scheduled_at)}</p>
+              {iv.prep_notes && <p className="text-text-muted text-xs mt-0.5 whitespace-pre-line">{iv.prep_notes}</p>}
+            </div>
+            <button type="button" title="Remove interview"
+              onClick={() => { if (window.confirm('Remove this interview?')) delMut.mutate(iv.id); }}
+              className="p-1 rounded text-red-400 hover:bg-red-500/10">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        );
+      })}
+
+      {adding && (
+        <div className="p-3 rounded-lg border border-fg/10 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <input type="datetime-local" className="input-field w-full text-xs" value={form.when}
+              onChange={(e) => setForm((f) => ({ ...f, when: e.target.value }))} />
+            <select className="input-field w-full text-xs" value={form.roundType}
+              onChange={(e) => setForm((f) => ({ ...f, roundType: e.target.value }))}>
+              {ROUNDS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+            </select>
+          </div>
+          <textarea rows={2} className="input-field w-full text-xs" placeholder="Prep notes (who, where, what to revise…)"
+            value={form.prepNotes} onChange={(e) => setForm((f) => ({ ...f, prepNotes: e.target.value }))} />
+          {addMut.isError && <p className="text-red-400 text-xs">Could not save the interview. Check the date and time.</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => { setAdding(false); addMut.reset(); }}
+              className="flex-1 py-1.5 rounded-lg border border-fg/10 text-text-secondary text-xs">Cancel</button>
+            <button type="button" disabled={!form.when || addMut.isPending} onClick={() => addMut.mutate()}
+              className="flex-1 btn-primary py-1.5 text-xs flex items-center justify-center gap-1 disabled:opacity-50">
+              {addMut.isPending && <Loader2 className="w-3 h-3 animate-spin" />} Save interview
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Detail panel ──────────────────────────────────────────────────
 function DetailPanel({ app, onClose, onSave, onDelete, saving }) {
   const [form, setForm] = useState(null);
@@ -135,8 +231,8 @@ function DetailPanel({ app, onClose, onSave, onDelete, saving }) {
       className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex justify-end"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'tween', duration: 0.22 }}
-        className="w-full max-w-md h-full bg-bg-secondary border-l border-white/8 flex flex-col">
-        <div className="flex items-start gap-3 px-5 py-4 border-b border-white/8">
+        className="w-full max-w-md h-full bg-bg-secondary border-l border-fg/8 flex flex-col">
+        <div className="flex items-start gap-3 px-5 py-4 border-b border-fg/8">
           <div className="flex-1 min-w-0">
             <p className="text-text-primary font-bold leading-snug">{app.job_title}</p>
             <p className="text-text-secondary text-sm">{app.company}{app.location ? ` · ${app.location}` : ''}</p>
@@ -147,7 +243,7 @@ function DetailPanel({ app, onClose, onSave, onDelete, saving }) {
               </a>
             )}
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-white/5">
+          <button onClick={onClose} className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-fg/5">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -182,10 +278,12 @@ function DetailPanel({ app, onClose, onSave, onDelete, saving }) {
               placeholder="Interview rounds, contact person, what they asked…" />
           </label>
 
+          <InterviewsSection app={app} />
+
           {history.length > 0 && (
             <div className="space-y-2">
               <p className="text-text-secondary text-xs">Timeline</p>
-              <ol className="space-y-1.5 border-l border-white/10 pl-3">
+              <ol className="space-y-1.5 border-l border-fg/10 pl-3">
                 {history.map((h, i) => (
                   <li key={i} className="text-xs text-text-secondary">
                     <span className="text-text-primary font-medium">{labelOf(h.status)}</span>
@@ -197,7 +295,7 @@ function DetailPanel({ app, onClose, onSave, onDelete, saving }) {
           )}
         </div>
 
-        <div className="flex gap-2 px-5 py-4 border-t border-white/8">
+        <div className="flex gap-2 px-5 py-4 border-t border-fg/8">
           <button onClick={() => { if (window.confirm('Remove this application from your tracker?')) onDelete(app.id); }}
             className="p-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20" title="Delete">
             <Trash2 className="w-4 h-4" />
@@ -275,6 +373,8 @@ export default function Tracker() {
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['applications'] });
     qc.invalidateQueries({ queryKey: ['jobs'] });
+    qc.invalidateQueries({ queryKey: ['next-interview'] }); // closing an application hides its interviews
+    qc.invalidateQueries({ queryKey: ['closing-soon'] });
   };
   const errorMsg = (err, fallback) =>
     err?.response?.data?.error || err?.response?.data?.errors?.[0]?.msg || fallback;
@@ -293,12 +393,18 @@ export default function Tracker() {
     onSuccess:  () => { refresh(); setOpenId(null); showToast('Removed.'); },
   });
 
+  // Moving a card to Interview opens it, so the date can be added right away
+  const changeStatus = (id, status) => {
+    updateMut.mutate({ id, fields: { status } });
+    if (status === 'interview') setOpenId(id);
+  };
+
   const openApp = apps.find((a) => a.id === openId);
 
   return (
     <div className="min-h-screen bg-bg-primary">
       {/* Header */}
-      <div className="sticky top-0 z-30 bg-bg-primary/80 backdrop-blur-xl border-b border-white/8 px-4 sm:px-6 py-4">
+      <div className="sticky top-0 z-30 bg-bg-primary/80 backdrop-blur-xl border-b border-fg/8 px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between gap-3 max-w-7xl mx-auto">
           <div>
             <h1 className="text-text-primary font-bold text-xl">Application Tracker</h1>
@@ -341,7 +447,7 @@ export default function Tracker() {
                 {STAGES.map((s) => (
                   <button key={s.key} onClick={() => setMobileStage(s.key)}
                     className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
-                      ${mobileStage === s.key ? s.color : 'text-text-muted border-white/10'}`}>
+                      ${mobileStage === s.key ? s.color : 'text-text-muted border-fg/10'}`}>
                     {s.label} · {byStage[s.key].length}
                   </button>
                 ))}
@@ -350,7 +456,7 @@ export default function Tracker() {
                 ? <p className="text-text-muted text-sm text-center py-8">No applications in this stage.</p>
                 : byStage[mobileStage].map((a) => (
                     <AppCard key={a.id} app={a} onOpen={setOpenId}
-                      onStatus={(id, status) => updateMut.mutate({ id, fields: { status } })} />
+                      onStatus={changeStatus} />
                   ))}
             </div>
 
@@ -365,7 +471,7 @@ export default function Tracker() {
                   <div className="space-y-2 min-h-[60px]">
                     {byStage[s.key].map((a) => (
                       <AppCard key={a.id} app={a} onOpen={setOpenId}
-                        onStatus={(id, status) => updateMut.mutate({ id, fields: { status } })} />
+                        onStatus={changeStatus} />
                     ))}
                   </div>
                 </div>

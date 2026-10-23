@@ -47,13 +47,13 @@ const TESTIMONIALS = [
   },
   {
     name: 'Nusrat Jahan', role: 'Product Manager', company: 'bKash',
-    avatar: 'NJ', color: '#06b6d4',
+    avatar: 'NJ', color: '#0e7490',
     text: 'The AI resume review is incredibly accurate. It caught keyword gaps I never noticed.',
     stars: 5,
   },
   {
     name: 'Mahfuzur Rahman', role: 'Data Scientist', company: 'Daraz',
-    avatar: 'MR', color: '#22c55e',
+    avatar: 'MR', color: '#15803d',
     text: 'Best platform for job tracking and interview prep. The BDT salary insights are a game changer.',
     stars: 5,
   },
@@ -239,7 +239,7 @@ function DashboardPreview() {
                   <p className="text-xs text-text-secondary">{job.company}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  <span className="text-xs font-bold" style={{ color: job.color }}>{job.match}%</span>
+                  <span className={`text-xs font-bold ${job.match >= 90 ? 'text-success' : 'text-warning'}`}>{job.match}%</span>
                   <div className="flex gap-1">
                     {job.tags.map((t) => (
                       <span key={t} className="px-1.5 py-0.5 rounded text-xs bg-bg-primary text-text-secondary">{t}</span>

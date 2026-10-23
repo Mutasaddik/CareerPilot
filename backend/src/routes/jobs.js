@@ -4,6 +4,7 @@ import { getMatchedJobsForUser, recalculateUserMatches } from '../services/match
 import { runJobSync, refreshJobsForUser } from '../services/jobSyncService.js';
 import { query } from '../models/db.js';
 import { getCache, setCache } from '../models/redis.js';
+import { attachSalaries } from '../services/salaryService.js';
 import logger from '../services/loggerService.js';
 
 const router = express.Router();
@@ -38,7 +39,11 @@ router.get('/stats', async (req, res) => {
                             AND jm.relevance_score < 90)   AS strong,
          COUNT(*) FILTER (WHERE jm.relevance_score >= 50
                             AND jm.relevance_score < 70)   AS good,
-         MAX(jm.relevance_score)                           AS top_score
+         MAX(jm.relevance_score)                           AS top_score,
+         -- What the dashboard shows: jobs that actually fit, and the fresh ones
+         COUNT(*) FILTER (WHERE jm.relevance_score >= 70)  AS strong_matches,
+         COUNT(*) FILTER (WHERE jm.relevance_score >= 70
+                            AND COALESCE(j.posted_date, j.scraped_at) > NOW() - INTERVAL '7 days') AS new_this_week
        FROM job_matches jm
        JOIN jobs j ON j.id = jm.job_id
        WHERE jm.user_id = $1 AND j.is_expired = FALSE`,
@@ -117,6 +122,29 @@ router.get('/regenerate/status', async (req, res) => {
   }
 });
 
+// ── GET /jobs/closing-soon — strong matches whose deadline is within 7 days ──
+// (declared before /:id so it isn't read as a job id)
+router.get('/closing-soon', async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT j.*, jm.relevance_score, jm.match_breakdown_json, jm.user_feedback, a.status AS application_status
+       FROM job_matches jm
+       JOIN jobs j ON j.id = jm.job_id
+       LEFT JOIN applications a ON a.job_id = j.id AND a.user_id = jm.user_id
+       WHERE jm.user_id = $1 AND jm.relevance_score >= 70 AND j.is_expired = FALSE
+         AND j.deadline BETWEEN CURRENT_DATE AND CURRENT_DATE + 7
+         AND (a.id IS NULL OR a.status = 'saved')
+       ORDER BY j.deadline, jm.relevance_score DESC
+       LIMIT 6`,
+      [req.user.id]
+    );
+    res.json({ success: true, jobs: await attachSalaries(result.rows) });
+  } catch (err) {
+    logger.error('Closing soon error', { error: err.message });
+    res.status(500).json({ success: false, error: 'Failed to fetch closing jobs.' });
+  }
+});
+
 // ── GET /jobs/:id — single job with match details ─────────────────
 router.get('/:id', async (req, res) => {
   try {
@@ -137,7 +165,8 @@ router.get('/:id', async (req, res) => {
       [req.params.id, userId]
     );
 
-    res.json({ success: true, job: result.rows[0] });
+    const [job] = await attachSalaries(result.rows);
+    res.json({ success: true, job });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to fetch job.' });
   }

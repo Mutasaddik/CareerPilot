@@ -20,7 +20,7 @@ const scopeBadge = (cv) => {
   if (cv.is_primary)                    return { label: 'Primary',      color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' };
   if (cv.usage_scope === 'company_only')     return { label: cv.company_name || 'Company', color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' };
   if (cv.usage_scope === 'job_only')         return { label: 'This Job',     color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' };
-  return                                       { label: 'Unassigned',   color: 'text-text-muted bg-white/5 border-white/10' };
+  return                                       { label: 'Unassigned',   color: 'text-text-muted bg-fg/5 border-fg/10' };
 };
 
 const scoreColor = (s) => {
@@ -34,13 +34,13 @@ function SkeletonCard() {
   return (
     <div className="glass-card p-4 animate-pulse space-y-3">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-white/8" />
+        <div className="w-10 h-10 rounded-xl bg-fg/8" />
         <div className="flex-1 space-y-2">
-          <div className="h-3 bg-white/8 rounded w-3/4" />
-          <div className="h-2 bg-white/5 rounded w-1/2" />
+          <div className="h-3 bg-fg/8 rounded w-3/4" />
+          <div className="h-2 bg-fg/5 rounded w-1/2" />
         </div>
       </div>
-      <div className="h-2 bg-white/5 rounded w-full" />
+      <div className="h-2 bg-fg/5 rounded w-full" />
     </div>
   );
 }
@@ -68,7 +68,7 @@ function ImprovementSection({ analysis }) {
           </div>
           <div className="space-y-2">
             {scorePath.fixes.map((fix, i) => (
-              <div key={i} className="flex items-start justify-between gap-3 p-2.5 rounded-lg bg-white/3 border border-white/8">
+              <div key={i} className="flex items-start justify-between gap-3 p-2.5 rounded-lg bg-fg/3 border border-fg/8">
                 <span className="text-text-secondary text-sm flex-1">{fix.action}</span>
                 <span className="text-green-400 text-xs font-bold shrink-0 bg-green-500/10 px-2 py-0.5 rounded-full">+{fix.points}</span>
               </div>
@@ -138,7 +138,7 @@ function ImprovementSection({ analysis }) {
         <div className="glass-card p-4 space-y-3">
           <h3 className="text-text-primary font-semibold text-sm">Rewrite These Bullets</h3>
           {analysis.bullet_rewrites.map((bw, i) => (
-            <div key={i} className="space-y-1.5 p-3 rounded-lg bg-white/3 border border-white/8">
+            <div key={i} className="space-y-1.5 p-3 rounded-lg bg-fg/3 border border-fg/8">
               <p className="text-red-400/80 text-xs line-through">{bw.current}</p>
               <p className="text-green-400 text-sm">{bw.better}</p>
             </div>
@@ -245,7 +245,7 @@ function RewritesSection({ activeCV, onOpen, showToast }) {
       {rewrites.length > 0 && (
         <div className="space-y-2">
           {rewrites.map((r) => (
-            <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/3 border border-white/8">
+            <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl bg-fg/3 border border-fg/8">
               <div className="flex-1 min-w-0">
                 <p className="text-text-primary text-sm truncate">{r.title}</p>
                 <p className="text-text-muted text-xs">
@@ -332,7 +332,7 @@ export default function CVStudio() {
   return (
     <div className="min-h-screen bg-bg-primary">
       {/* Topbar */}
-      <div className="sticky top-0 z-30 bg-bg-primary/80 backdrop-blur-xl border-b border-white/8 px-6 py-4">
+      <div className="sticky top-0 z-30 bg-bg-primary/80 backdrop-blur-xl border-b border-fg/8 px-6 py-4">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div>
             <h1 className="text-text-primary font-bold text-xl">CV Studio</h1>
@@ -380,12 +380,12 @@ export default function CVStudio() {
                   whileHover={{ scale: 1.01 }}
                   onClick={() => setActiveCV(cv.id)}
                   className={`glass-card p-4 cursor-pointer transition-all border ${
-                    isActive ? 'border-brand-cyan/40 bg-brand-cyan/5' : 'border-white/8 hover:border-white/20'
+                    isActive ? 'border-brand-cyan/40 bg-brand-cyan/5' : 'border-fg/8 hover:border-fg/20'
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                      cv.is_primary ? 'bg-yellow-500/15 border border-yellow-500/20' : 'bg-white/5 border border-white/10'
+                      cv.is_primary ? 'bg-yellow-500/15 border border-yellow-500/20' : 'bg-fg/5 border border-fg/10'
                     }`}>
                       {cv.is_primary ? <Star className="w-5 h-5 text-yellow-400" /> : <FileText className="w-5 h-5 text-text-muted" />}
                     </div>
@@ -413,7 +413,7 @@ export default function CVStudio() {
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
-                      className="flex items-center gap-2 mt-3 pt-3 border-t border-white/8"
+                      className="flex items-center gap-2 mt-3 pt-3 border-t border-fg/8"
                     >
                       {!cv.is_primary && (
                         <button
@@ -434,7 +434,7 @@ export default function CVStudio() {
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); window.open(cv.file_url, '_blank'); }}
-                        className="flex-1 text-xs py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-text-secondary border border-white/10 transition-colors flex items-center justify-center gap-1"
+                        className="flex-1 text-xs py-1.5 px-2 rounded-lg bg-fg/5 hover:bg-fg/10 text-text-secondary border border-fg/10 transition-colors flex items-center justify-center gap-1"
                       >
                         <FileText className="w-3 h-3" /> View
                       </button>
@@ -474,7 +474,7 @@ export default function CVStudio() {
                           <span className="text-text-secondary capitalize">{key.replace(/_/g, ' ')}</span>
                           <span className={`font-semibold ${scoreColor(val)}`}>{val}%</span>
                         </div>
-                        <div className="w-full bg-white/8 rounded-full h-1.5 overflow-hidden">
+                        <div className="w-full bg-fg/8 rounded-full h-1.5 overflow-hidden">
                           <motion.div
                             className="h-full rounded-full bg-gradient-to-r from-brand-cyan to-purple-500"
                             initial={{ width: 0 }}
@@ -557,7 +557,7 @@ export default function CVStudio() {
               <div className="flex gap-3">
                 <button
                   onClick={() => setDeleteTarget(null)}
-                  className="flex-1 py-2.5 rounded-xl border border-white/10 text-text-secondary hover:text-text-primary hover:bg-white/5 text-sm transition-colors"
+                  className="flex-1 py-2.5 rounded-xl border border-fg/10 text-text-secondary hover:text-text-primary hover:bg-fg/5 text-sm transition-colors"
                 >
                   Cancel
                 </button>

@@ -2,10 +2,7 @@ import { useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  LayoutDashboard, Briefcase, FileText, Send, Radar,
-  MessageSquareText, Wallet, TrendingUp, GraduationCap,
-  Users, KanbanSquare, Settings as SettingsIcon,
-  Shield, ShieldAlert, ShieldCheck, ChevronLeft,
+  LayoutDashboard, Briefcase, FileText, KanbanSquare, Award, Settings as SettingsIcon, Shield, ShieldAlert, ShieldCheck, ChevronLeft,
 } from 'lucide-react';
 import useAuthStore from '../../store/authStore.js';
 
@@ -15,14 +12,11 @@ const USER_NAV = [
   { to: '/dashboard-home', label: 'Dashboard',       icon: LayoutDashboard },
   { to: '/jobs',           label: 'Jobs',            icon: Briefcase },
   { to: '/cv',             label: 'CV Studio',       icon: FileText },
-  { to: '/cover-letters',  label: 'Cover Letters',   icon: Send },
-  { to: '/skill-radar',    label: 'Skill Radar',     icon: Radar },
-  { to: '/interview-prep', label: 'Interview Prep',  icon: MessageSquareText },
-  { to: '/salary',         label: 'Salary Insights', icon: Wallet },
-  { to: '/market',         label: 'Market Trends',   icon: TrendingUp },
-  { to: '/learning',       label: 'Learning Hub',    icon: GraduationCap },
-  { to: '/contacts',       label: 'Contacts',        icon: Users },
+  // Not built yet — add back when the page exists (each was a 404):
+  // Cover Letters /cover-letters, Skill Radar /skill-radar, Interview Prep /interview-prep,
+  // Salary Insights /salary, Market Trends /market, Learning Hub /learning, Contacts /contacts
   { to: '/tracker',        label: 'Tracker',         icon: KanbanSquare },
+  { to: '/certifications', label: 'Certifications', icon: Award },
   { to: '/settings',       label: 'Settings',        icon: SettingsIcon },
 ];
 
@@ -68,12 +62,12 @@ export default function Sidebar({ collapsed = false, onToggle }) {
     <aside
       data-testid="sidebar"
       className={`hidden md:flex flex-col shrink-0 h-screen sticky top-0 z-40
-                  bg-bg-secondary/60 backdrop-blur-xl border-r border-white/8
+                  bg-bg-secondary/60 backdrop-blur-xl border-r border-fg/8
                   transition-[width] duration-300 ease-out
                   ${collapsed ? 'w-[72px]' : 'w-64'}`}
     >
       {/* Logo */}
-      <div className="flex items-center gap-2.5 h-16 px-4 border-b border-white/8 shrink-0">
+      <div className="flex items-center gap-2.5 h-16 px-4 border-b border-fg/8 shrink-0">
         <div className={`w-9 h-9 rounded-xl ${accent.bg} flex items-center justify-center shrink-0`}>
           <span className={`font-black text-lg ${accent.text}`}>C</span>
         </div>
@@ -104,7 +98,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
                           transition-colors group
                           ${active
                             ? `${accent.bg} ${accent.text}`
-                            : 'text-text-secondary hover:text-text-primary hover:bg-white/5'}`}
+                            : 'text-text-secondary hover:text-text-primary hover:bg-fg/5'}`}
             >
               {active && (
                 <motion.span
@@ -120,12 +114,12 @@ export default function Sidebar({ collapsed = false, onToggle }) {
       </nav>
 
       {/* Collapse toggle */}
-      <div className="p-2.5 border-t border-white/8 shrink-0">
+      <div className="p-2.5 border-t border-fg/8 shrink-0">
         <button
           onClick={onToggle}
           data-testid="sidebar-collapse-btn"
           className="w-full flex items-center justify-center gap-2 rounded-xl px-3 py-2
-                     text-text-muted hover:text-text-primary hover:bg-white/5 transition-colors text-sm"
+                     text-text-muted hover:text-text-primary hover:bg-fg/5 transition-colors text-sm"
         >
           <ChevronLeft className={`w-4 h-4 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} />
           {!collapsed && <span>Collapse</span>}

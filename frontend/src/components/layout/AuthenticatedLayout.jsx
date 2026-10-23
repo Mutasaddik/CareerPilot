@@ -4,9 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Briefcase, FileText, Send, Radar,
-  MessageSquareText, Wallet, TrendingUp, GraduationCap,
-  Users, KanbanSquare, Settings as SettingsIcon,
+  LayoutDashboard, Briefcase, FileText, KanbanSquare, Award, Settings as SettingsIcon,
 } from 'lucide-react';
 import useAuthStore from '../../store/authStore.js';
 import Sidebar from './Sidebar.jsx';
@@ -24,14 +22,11 @@ const MOBILE_DRAWER_NAV = [
   { to: '/dashboard-home', label: 'Dashboard',       icon: LayoutDashboard },
   { to: '/jobs',           label: 'Jobs',            icon: Briefcase },
   { to: '/cv',             label: 'CV Studio',       icon: FileText },
-  { to: '/cover-letters',  label: 'Cover Letters',   icon: Send },
-  { to: '/skill-radar',    label: 'Skill Radar',     icon: Radar },
-  { to: '/interview-prep', label: 'Interview Prep',  icon: MessageSquareText },
-  { to: '/salary',         label: 'Salary Insights', icon: Wallet },
-  { to: '/market',         label: 'Market Trends',   icon: TrendingUp },
-  { to: '/learning',       label: 'Learning Hub',    icon: GraduationCap },
-  { to: '/contacts',       label: 'Contacts',        icon: Users },
+  // Not built yet — add back when the page exists (each was a 404):
+  // Cover Letters /cover-letters, Skill Radar /skill-radar, Interview Prep /interview-prep,
+  // Salary Insights /salary, Market Trends /market, Learning Hub /learning, Contacts /contacts
   { to: '/tracker',        label: 'Tracker',         icon: KanbanSquare },
+  { to: '/certifications', label: 'Certifications', icon: Award },
   { to: '/settings',       label: 'Settings',        icon: SettingsIcon },
 ];
 
@@ -65,10 +60,10 @@ export default function AuthenticatedLayout() {
               initial={{ x: -300 }} animate={{ x: 0 }} exit={{ x: -300 }}
               transition={{ type: 'tween', duration: 0.25 }}
               className="md:hidden fixed left-0 top-0 bottom-0 w-64 z-50
-                         bg-bg-secondary border-r border-white/8 flex flex-col"
+                         bg-bg-secondary border-r border-fg/8 flex flex-col"
               data-testid="mobile-drawer"
             >
-              <div className="flex items-center justify-between h-16 px-4 border-b border-white/8">
+              <div className="flex items-center justify-between h-16 px-4 border-b border-fg/8">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-brand-cyan/15 flex items-center justify-center">
                     <span className="font-black text-lg text-brand-cyan">C</span>
@@ -76,7 +71,7 @@ export default function AuthenticatedLayout() {
                   <span className="text-text-primary font-bold text-sm">CareerPilot</span>
                 </div>
                 <button onClick={() => setDrawerOpen(false)}
-                        className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-white/5">
+                        className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-fg/5">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -88,7 +83,7 @@ export default function AuthenticatedLayout() {
                     <NavLink key={to} to={to}
                       className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors
                                   ${active ? 'bg-brand-cyan/15 text-brand-cyan'
-                                           : 'text-text-secondary hover:text-text-primary hover:bg-white/5'}`}>
+                                           : 'text-text-secondary hover:text-text-primary hover:bg-fg/5'}`}>
                       <Icon className="w-[18px] h-[18px] shrink-0" />
                       <span>{label}</span>
                     </NavLink>

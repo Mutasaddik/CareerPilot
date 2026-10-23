@@ -4,6 +4,7 @@
 // Duplicate → merge sources[], keep best data
 // ════════════════════════════════════════════════════════════════
 import { query } from '../models/db.js';
+import { classifyOccupation } from './taxonomyService.js';
 import logger from './loggerService.js';
 
 // Simple fuzzy: normalize and check substring overlap
@@ -60,6 +61,9 @@ export const upsertJobs = async (jobs) => {
 
   for (const job of jobs) {
     try {
+      // Classified once here, so matching never has to work it out per user
+      const occ = classifyOccupation(job.title);
+
       // Same posting URL is the same job; otherwise fall back to company + title + city
       let existing = job.job_url
         ? await query(`SELECT id, sources FROM jobs WHERE job_url = $1 LIMIT 1`, [job.job_url])
@@ -87,10 +91,13 @@ export const upsertJobs = async (jobs) => {
              deadline         = COALESCE($5, deadline),
              description      = CASE WHEN LENGTH(COALESCE($7, '')) > LENGTH(COALESCE(description, ''))
                                      THEN $7 ELSE description END,
+             occupation_key   = $8,
+             occupation_name  = $9,
              is_expired       = FALSE,
              scraped_at       = NOW()
            WHERE id = $6`,
-          [merged, job.salary_min_bdt, job.salary_max_bdt, job.company_logo_url, job.deadline, existing.rows[0].id, job.description]
+          [merged, job.salary_min_bdt, job.salary_max_bdt, job.company_logo_url, job.deadline, existing.rows[0].id, job.description,
+           occ?.key || null, occ?.name || null]
         );
         updated++;
       } else {
@@ -99,8 +106,9 @@ export const upsertJobs = async (jobs) => {
           `INSERT INTO jobs (
              title, company, company_logo_url, company_domain, location,
              job_url, description, posted_date, deadline, scraped_at, sources,
-             is_remote, experience_level, salary_min_bdt, salary_max_bdt, is_expired
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),$10,$11,$12,$13,$14,FALSE)
+             is_remote, experience_level, salary_min_bdt, salary_max_bdt, is_expired,
+             occupation_key, occupation_name
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),$10,$11,$12,$13,$14,FALSE,$15,$16)
            ON CONFLICT DO NOTHING`,
           [
             job.title, job.company, job.company_logo_url, job.company_domain,
@@ -108,6 +116,7 @@ export const upsertJobs = async (jobs) => {
             job.posted_date, job.deadline,
             job.sources, job.is_remote, job.experience_level,
             job.salary_min_bdt, job.salary_max_bdt,
+            occ?.key || null, occ?.name || null,
           ]
         );
         inserted++;
@@ -152,4 +161,32 @@ export const expireMissingJobs = async (source, scrapedJobUrls) => {
   );
   logger.info('Expired missing jobs', { count: result.rowCount });
   return result.rowCount;
+};
+
+// ── (Re)classify stored jobs into occupations ─────────────────────
+// all=false: only jobs never classified (new jobs from older code, or titles
+// that a taxonomy update can now place). all=true: after a taxonomy change.
+export const classifyStoredJobs = async ({ all = false } = {}) => {
+  const rows = (await query(
+    `SELECT id, title FROM jobs WHERE is_expired = FALSE ${all ? '' : 'AND occupation_key IS NULL'}`
+  )).rows;
+  let classified = 0;
+  for (let i = 0; i < rows.length; i += 500) {
+    const chunk = rows.slice(i, i + 500);
+    const params = [];
+    const values = chunk.map((r) => {
+      const occ = classifyOccupation(r.title);
+      if (occ) classified++;
+      params.push(r.id, occ?.key || null, occ?.name || null);
+      const n = params.length;
+      return `($${n - 2}::uuid, $${n - 1}::varchar, $${n}::varchar)`;
+    });
+    await query(
+      `UPDATE jobs j SET occupation_key = v.key, occupation_name = v.name
+       FROM (VALUES ${values.join(', ')}) AS v(id, key, name) WHERE j.id = v.id`,
+      params
+    );
+  }
+  logger.info('Jobs classified into occupations', { checked: rows.length, classified });
+  return { checked: rows.length, classified };
 };

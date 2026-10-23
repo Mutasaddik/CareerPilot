@@ -77,6 +77,9 @@ const getSkillIndex = () => {
   return skillIndex;
 };
 
+// 'technology' | 'competency' | 'soft' | 'fallback' | null
+export const getSkillCategory = (name) => SKILLS.get((name || '').toLowerCase())?.category || null;
+
 // Extract all known skills present in text (word-boundary safe)
 export const extractSkillsFromText = (text) => {
   const { grams, maxN, regexSkills } = getSkillIndex();
@@ -127,6 +130,7 @@ import { query as dbQuery } from '../models/db.js';
 
 let TITLE_TO_CODE = new Map();   // lowercased title → onet_code
 let ROLE_SKILLS   = new Map();   // onet_code → [skills]
+let TITLE_CODES   = new Map();   // lowercased title → Set(onet_code) (a title can belong to several)
 
 export const loadRoleMappings = async () => {
   try {
@@ -135,6 +139,12 @@ export const loadRoleMappings = async () => {
       dbQuery('SELECT onet_code, skill FROM taxonomy_role_skills'),
     ]);
     TITLE_TO_CODE = new Map(t.rows.map((r) => [r.title.toLowerCase(), r.onet_code]));
+    TITLE_CODES = new Map();
+    for (const r of t.rows) {
+      const k = r.title.toLowerCase();
+      if (!TITLE_CODES.has(k)) TITLE_CODES.set(k, new Set());
+      TITLE_CODES.get(k).add(r.onet_code);
+    }
     ROLE_SKILLS = new Map();
     for (const r of rs.rows) {
       if (!ROLE_SKILLS.has(r.onet_code)) ROLE_SKILLS.set(r.onet_code, []);
@@ -247,7 +257,8 @@ const tokenizeTitle = (title) =>
     .split(/\s+/)
     .filter((w) => w.length > 1 && !TITLE_NOISE.has(w));
 
-export const getCuratedPack = (roleTitle) => {
+// strict: only an exact title-synonym match (skip the token-evidence guess)
+export const getCuratedPack = (roleTitle, { strict = false } = {}) => {
   if (!roleTitle) return null;
   const t = ` ${roleTitle.toLowerCase().trim()} `;
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -262,6 +273,7 @@ export const getCuratedPack = (roleTitle) => {
     }
   }
   if (best) return best.pack;
+  if (strict) return null;
 
   // Pass 2 — signature-token evidence scoring
   const tokens = tokenizeTitle(roleTitle);
@@ -288,7 +300,348 @@ export const getCuratedPack = (roleTitle) => {
 };
 
 // Filtered O*NET expectations: hot tools + non-generic competencies
+// ── Role family of a CV ───────────────────────────────────────────
+// Scores the CV against every curated role family: a family's title in the
+// CV's headline is strong evidence, a title elsewhere is medium, and each of
+// the family's skills/tools found adds a little. Detecting from O*NET titles
+// alone mislabelled CVs (a marketing/operations CV read as "event coordinator").
+const HEADLINE_CHARS      = 400;
+const MIN_FAMILY_SCORE    = 4;
+const MIN_SUPPORT_SCORE   = 3;
+
+const familyEvidence = (pack, fullText, headline) => {
+  let score = 0, headlineHit = false;
+  const hits = [];
+  for (const syn of pack.title_synonyms || []) {
+    if (hasWordBoundaryMatch(headline, syn))      { score += 5; hits.push(syn); headlineHit = true; }
+    else if (hasWordBoundaryMatch(fullText, syn)) { score += 2; hits.push(syn); }
+  }
+  for (const term of [...(pack.keywords || []), ...(pack.tools || [])]) {
+    if (hasWordBoundaryMatch(fullText, term)) { score += 1; hits.push(term); }
+  }
+  return { score, hits, headlineHit };
+};
+
+const cvTexts = (text) => {
+  const flat = ` ${(text || '').toLowerCase().replace(/\s+/g, ' ')} `;
+  return { fullText: flat, headline: flat.slice(0, HEADLINE_CHARS) };
+};
+
+// Best-fitting family for a CV, or null when nothing fits clearly
+export const detectFamilyFromCV = (text) => {
+  const { fullText, headline } = cvTexts(text);
+  let best = null;
+  for (const pack of CURATED_PACKS) {
+    const { score, hits, headlineHit } = familyEvidence(pack, fullText, headline);
+    if (!best || score > best.score) best = { family: pack.role_name, score, hits, headlineHit };
+  }
+  return best && best.score >= MIN_FAMILY_SCORE ? best : null;
+};
+
+// Does the CV show real evidence of this role (e.g. the user's chosen target)?
+export const cvSupportsRole = (text, roleTitle) => {
+  const pack = getOccupationPack(classifyOccupation(roleTitle));
+  if (!pack) return null; // unknown role — can't judge
+  const { fullText, headline } = cvTexts(text);
+  return familyEvidence(pack, fullText, headline).score >= MIN_SUPPORT_SCORE;
+};
+
 export const getQualityExpectedSkills = (onetCode, limit = 25) => {
   const all = ROLE_SKILLS.get(onetCode) || [];
   return all.filter((s) => !GENERIC_COMPETENCIES.has(s.toLowerCase())).slice(0, limit);
+};
+
+// ════════════════════════════════════════════════════════════════
+// Occupations — so matching works for any profession
+// Every job title / CV is placed in one occupation: a curated Bangladesh
+// track ("cp:…", fine-tuned) or one of ~1,000 O*NET occupations
+// ("onet:<SOC code>", e.g. Fashion Designers, Electrical Engineers).
+// How close two occupations are comes from the SOC code hierarchy.
+// ════════════════════════════════════════════════════════════════
+let OCCUPATIONS = new Map();   // onet_code → { code, title, name }
+
+// Curated tracks placed in the SOC hierarchy, so they relate to O*NET ones
+const CURATED_SOC = {
+  'qa engineer':          '15-1253.00', 'software engineer':  '15-1252.00', 'frontend developer':   '15-1254.00',
+  'backend developer':    '15-1252.00', 'full stack developer': '15-1252.00', 'mobile developer':   '15-1252.00',
+  'devops engineer':      '15-1244.00', 'data analyst':       '15-2051.00', 'business analyst':     '13-1111.00',
+  'project manager':      '13-1082.00', 'marketing specialist': '13-1161.00', 'sales executive':    '41-4012.00',
+  'customer service':     '43-4051.00', 'merchandiser':       '13-1022.00', 'hr executive':         '13-1071.00',
+  'accountant':           '13-2011.00', 'graphic designer':   '27-1024.00', 'content writer':       '27-3043.00',
+  'management trainee':   '11-1021.00', 'event coordinator':  '13-1121.00', 'operations executive': '11-1021.00',
+  'banking officer':      '13-2072.00',
+};
+
+// "Accountants and Auditors" → "Accountant", "Registered Nurses" → "Registered Nurse"
+const occupationName = (title) => {
+  let head = title.split(',')[0].trim();
+  if (!head.includes(' ')) head = title.replace(/,? and /gi, ' and ').trim(); // one word before the comma says too little
+  const [first] = head.split(/ and /i);
+  if (first !== head && /[^s]s$/i.test(first.trim())) head = first.trim(); // "Accountants and Auditors" → "Accountants"
+  return head.replace(/(\w+)$/, (w) => (
+    /ives$/i.test(w) ? w.slice(0, -3) + 'fe'          // Midwives → Midwife
+      : /ies$/i.test(w) ? w.slice(0, -3) + 'y'        // Secretaries → Secretary
+      : /(ss|us)$/i.test(w) ? w : w.replace(/s$/i, '')
+  ));
+};
+
+export const loadOccupations = async () => {
+  try {
+    const r = await dbQuery('SELECT onet_code, title FROM taxonomy_occupations');
+    OCCUPATIONS = new Map(r.rows.map((o) => [o.onet_code, { code: o.onet_code, title: o.title, name: occupationName(o.title) }]));
+    titleIndex = null;
+    logger.info('Occupations loaded', { occupations: OCCUPATIONS.size });
+  } catch (err) { logger.warn('Occupations load failed', { error: err.message }); }
+};
+
+// "qa engineer" → "QA Engineer", "hr executive" → "HR Executive"
+const ACRONYM_WORDS = { qa: 'QA', sqa: 'SQA', hr: 'HR', it: 'IT', ui: 'UI', ux: 'UX', devops: 'DevOps' };
+const titleCase = (s) => s.replace(/\b[a-z]+\b/g, (w) => ACRONYM_WORDS[w] || w.charAt(0).toUpperCase() + w.slice(1));
+
+// ── Fast title lookup over all O*NET titles (n-grams, longest wins) ──
+let titleIndex = null; // { grams: Map<title, code>, maxN, codeTitles: Map<code, titles[]> }
+const MIN_SINGLE_WORD_TITLE = 6; // "nurse"-length words are fine, "agent"/"clerk"-style generics are not
+
+const getTitleIndex = () => {
+  if (titleIndex && titleIndex.source === TITLE_CODES) return titleIndex;
+  const grams = new Map();
+  const codeTitles = new Map();
+  let maxN = 1;
+  // An occupation's own official name (singular) always points to it, even if
+  // another occupation lists the same words as an alternate title (O*NET lists
+  // "Civil Engineer" under Environmental Engineers; "Civil Engineers" is 17-2051)
+  for (const occ of OCCUPATIONS.values()) {
+    const toks = tokenize(occ.name);
+    if (toks.length < 2) continue;
+    grams.set(toks.join(' '), occ.code);
+    maxN = Math.max(maxN, toks.length);
+  }
+  for (const [title, codeSet] of TITLE_CODES) {
+    const toks = tokenize(title);
+    if (toks.length === 0) continue;
+    const gram = toks.join(' ');
+    if (GENERIC_TITLES.has(gram) || ROLE_MODIFIERS.has(gram)) continue;
+    if (toks.length === 1 && gram.length < MIN_SINGLE_WORD_TITLE) continue;
+    // A title shared by unrelated occupations ("systems engineer") decides nothing
+    let codes = [...codeSet];
+    if (new Set(codes.map((c) => c.slice(0, 6))).size > 1) {
+      // "civil engineer" is listed under several occupations — keep it only
+      // for the one actually named Civil Engineers
+      codes = codes.filter((c) => tokenize(OCCUPATIONS.get(c)?.title || '').join(' ').includes(gram));
+      if (codes.length !== 1) continue;
+    }
+    const code = codes[0];
+    if (!grams.has(gram)) grams.set(gram, code);
+    if (!codeTitles.has(code)) codeTitles.set(code, []);
+    codeTitles.get(code).push(title);
+    maxN = Math.max(maxN, toks.length);
+  }
+  titleIndex = { source: TITLE_CODES, grams, maxN: Math.min(maxN, 8), codeTitles };
+  return titleIndex;
+};
+
+// Every O*NET title found in a phrase: [{ code, title, words, pos }].
+// One-word titles ("deputy", "labor") only count when they are the whole
+// phrase once seniority words are removed — inside longer text they mislead.
+const findTitles = (text) => {
+  const { grams, maxN } = getTitleIndex();
+  const toks = tokenize(text || '');
+  const core = toks.filter((t) => !SENIORITY.has(t));
+  const found = [];
+  for (let i = 0; i < toks.length; i++) {
+    let gram = '';
+    for (let n = 1; n <= maxN && i + n <= toks.length; n++) {
+      gram = n === 1 ? toks[i] : `${gram} ${toks[i + n - 1]}`;
+      if (n === 1 && !(core.length === 1 && core[0] === gram)) continue;
+      const code = grams.get(gram);
+      if (code) found.push({ code, title: gram, words: n, pos: i });
+    }
+  }
+  return found;
+};
+
+// Words that describe level, not the job
+const SENIORITY = new Set(['senior', 'sr', 'junior', 'jr', 'asst', 'assistant', 'deputy', 'associate', 'principal',
+  'chief', 'head', 'lead', 'trainee', 'intern', 'probationary', 'executive', 'ii', 'iii', 'i']);
+const ROLE_MODIFIERS = new Set(['deputy', 'labor', 'labour', 'helper', 'worker', 'incharge', 'in charge']);
+// Nouns that name a job; "Officer - Operations" means "Operations Officer"
+const ROLE_NOUNS = new Set(['officer', 'executive', 'manager', 'engineer', 'assistant', 'associate', 'specialist',
+  'coordinator', 'analyst', 'supervisor', 'consultant', 'technician', 'designer', 'developer', 'administrator',
+  'director', 'controller', 'representative', 'operator', 'incharge', 'lead', 'head']);
+
+// Phrases worth looking up in a job title: the whole title, each part
+// between separators, and Bangladeshi "Noun - Field" order flipped
+// ("Officer - Operations" → "operations officer", "Engineer - Civil" →
+// "civil engineer").
+const titleCandidates = (title) => {
+  const parts = title.split(/\s*(?:[\/|,;:()&]|\s[-–—]\s|[-–—]\s|\s[-–—]|\bat\b|\bfor\b)\s*/i)
+    .map((p) => p.trim()).filter((p) => p.length > 1);
+  // Never look up across separators: "Executive / Assistant" is not "executive assistant"
+  const out = parts.length > 1 ? [...parts] : [title];
+  const flipped = [];
+  for (const a of parts) {
+    const aToks = tokenize(a);
+    const noun = [...aToks].reverse().find((t) => ROLE_NOUNS.has(t));
+    if (!noun) continue;
+    // Only a bare role word takes its field from another part ("Officer",
+    // "Project Engineer"); "Trainee Patrol Officer (Operations)" already says
+    // what the job is, so it is not re-read as "operations officer".
+    const core = aToks.filter((t) => !SENIORITY.has(t) && !VAGUE_LEADS.has(t) && !ROLE_NOUNS.has(t));
+    if (core.length > 0) continue;
+    for (const b of parts) {
+      if (b === a) continue;
+      const bToks = tokenize(b).filter((t) => !SENIORITY.has(t));
+      if (bToks.length === 0 || bToks.length > 3 || bToks.some((t) => ROLE_NOUNS.has(t))) continue;
+      flipped.push(`${bToks.join(' ')} ${noun}`);
+    }
+  }
+  return { phrases: [...new Set(out)], flipped: new Set(flipped) };
+};
+
+// A department written as the field names the track: "Manager - HR Office
+// Operations" is an HR manager, not an operations manager.
+const DEPARTMENT_TRACKS = {
+  hr: 'hr executive', human: 'hr executive', accounts: 'accountant', accounting: 'accountant',
+  finance: 'accountant', audit: 'accountant', marketing: 'marketing specialist', sales: 'sales executive',
+  merchandising: 'merchandiser', admin: 'operations executive', administration: 'operations executive',
+  customer: 'customer service',
+};
+
+// Leading words that make a title vague ("project engineer", "office engineer")
+const VAGUE_LEADS = new Set(['project', 'office', 'technical', 'support', 'general', 'field', 'site', 'systems',
+  'system', 'service', 'services', 'staff', 'plant', 'team', 'unit', 'department', 'area', 'zonal', 'regional']);
+const MIN_TITLE_SPECIFICITY = 2;
+
+// How specific an O*NET title is: words that say what the job is — level
+// words ("assistant", "chief") and vague words ("project", "technical") don't
+// count, so "assistant manager" or "technical support engineer" can't decide.
+const specificity = (title) =>
+  tokenize(title).filter((t) => !SENIORITY.has(t) && !VAGUE_LEADS.has(t)).length;
+
+// Most specific title: most words, then earliest
+const bestTitle = (found) => found.reduce((best, f) =>
+  (!best || f.words > best.words || (f.words === best.words && f.pos < best.pos) ? f : best), null);
+
+const onetOccupation = (code, matchedTitle) => {
+  const occ = OCCUPATIONS.get(code);
+  return { key: `onet:${code}`, code, name: occ?.name || titleCase(matchedTitle || code), curated: null };
+};
+const curatedOccupation = (pack) => ({
+  key: `cp:${pack.role_name}`, code: CURATED_SOC[pack.role_name] || null, name: titleCase(pack.role_name), curated: pack.role_name,
+});
+
+// ── Classify a job title / role name ──────────────────────────────
+// Exact curated track → most specific O*NET title → curated guess → null
+export const classifyOccupation = (title) => {
+  if (!title) return null;
+  const strict = getCuratedPack(title, { strict: true });
+  if (strict) return curatedOccupation(strict);
+
+  // Score every candidate reading; on ties prefer our curated tracks and the
+  // "field + role" reading ("civil engineer" over "project engineer").
+  const { phrases, flipped } = titleCandidates(title);
+  let best = null; // { occ, score }
+  const consider = (occ, specific, phrase) => {
+    const score = specific + (occ.curated ? 0.5 : 0) + (flipped.has(phrase) ? 0.25 : 0);
+    if (!best || score > best.score) best = { occ, score };
+  };
+  for (const phrase of [...phrases, ...flipped]) {
+    const dept = flipped.has(phrase) ? DEPARTMENT_TRACKS[tokenize(phrase)[0]] : null;
+    if (dept) {
+      const pack = CURATED_PACKS.find((p) => p.role_name === dept);
+      if (pack) { consider(curatedOccupation(pack), tokenize(phrase).length + 1, phrase); continue; }
+    }
+    const pack = getCuratedPack(phrase, { strict: true });
+    if (pack) { consider(curatedOccupation(pack), tokenize(phrase).length, phrase); continue; }
+    const t = bestTitle(findTitles(phrase));
+    if (!t) continue;
+    const specific = t.words === 1 ? 2 : specificity(t.title); // a whole-phrase single word is specific
+    if (specific < MIN_TITLE_SPECIFICITY) continue;
+    // An O*NET title that is really one of our curated tracks stays curated
+    const cp = getCuratedPack(t.title, { strict: true });
+    consider(cp ? curatedOccupation(cp) : onetOccupation(t.code, t.title), specific, phrase);
+  }
+  if (best) return best.occ;
+  const guess = getCuratedPack(title);
+  return guess ? curatedOccupation(guess) : null;
+};
+
+// Rebuild an occupation from a stored key ("cp:qa engineer" / "onet:17-2071.00")
+export const occupationFromKey = (key) => {
+  if (!key) return null;
+  if (key.startsWith('cp:')) {
+    const pack = CURATED_PACKS.find((p) => p.role_name === key.slice(3));
+    return pack ? curatedOccupation(pack) : null;
+  }
+  if (key.startsWith('onet:')) return onetOccupation(key.slice(5));
+  return null;
+};
+
+// ── The CV's occupation ───────────────────────────────────────────
+// A curated track named in the headline wins; otherwise an O*NET title in the
+// headline; otherwise strong curated evidence; otherwise the O*NET title the
+// CV mentions most.
+export const detectOccupationFromCV = (text) => {
+  if (!text) return null;
+  const { fullText, headline } = cvTexts(text);
+  const curated = detectFamilyFromCV(text);
+  if (curated?.headlineHit) return curatedOccupation(CURATED_PACKS.find((p) => p.role_name === curated.family));
+
+  const head = bestTitle(findTitles(headline));
+  if (head) return classifyOccupation(head.title);
+
+  if (curated) return curatedOccupation(CURATED_PACKS.find((p) => p.role_name === curated.family));
+
+  const counts = new Map();
+  for (const f of findTitles(fullText)) counts.set(f.code, (counts.get(f.code) || 0) + f.words);
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  return top && top[1] >= 2 ? classifyOccupation(OCCUPATIONS.get(top[0])?.title || '') || onetOccupation(top[0]) : null;
+};
+
+// ── A pack (titles + vocabulary) for any occupation ──────────────
+// Curated tracks have hand-made packs; O*NET occupations get their titles
+// plus only their specific technology skills (soft skills and everyday
+// office tools say nothing about the field).
+const EVERYDAY_TOOLS = new Set(['microsoft excel', 'microsoft word', 'microsoft office', 'microsoft outlook',
+  'microsoft powerpoint', 'microsoft teams', 'adobe acrobat', 'google docs', 'google sheets', 'google drive',
+  'email software', 'web browser software', 'zoom', 'slack', 'microsoft sharepoint']);
+const packCache = new Map();
+
+export const getOccupationPack = (occ) => {
+  if (!occ) return null;
+  if (occ.curated) return CURATED_PACKS.find((p) => p.role_name === occ.curated) || null;
+  if (packCache.has(occ.code)) return packCache.get(occ.code);
+  const titles = (getTitleIndex().codeTitles.get(occ.code) || [])
+    .sort((a, b) => b.length - a.length).slice(0, 30);
+  const keywords = (ROLE_SKILLS.get(occ.code) || [])
+    .filter((sk) => SKILLS.get(sk.toLowerCase())?.category === 'technology' && !EVERYDAY_TOOLS.has(sk.toLowerCase()))
+    .slice(0, 25);
+  const pack = { role_name: occ.name.toLowerCase(), title_synonyms: titles, keywords, tools: [] };
+  packCache.set(occ.code, pack);
+  return pack;
+};
+
+// ── How close two occupations are (SOC: major-minor-broad-detailed) ──
+// same detailed (17-2071) → 'same' · same broad (17-207x) → 'related'
+// same minor (17-2xxx) → 'weak' · otherwise 'different'
+export const socRelation = (a, b) => {
+  if (!a || !b) return null;
+  if (a.slice(0, 7) === b.slice(0, 7)) return 'same';
+  if (a.slice(0, 6) === b.slice(0, 6)) return 'related';
+  if (a.slice(0, 4) === b.slice(0, 4)) return 'weak';
+  return 'different';
+};
+
+// For role search boxes: occupation names containing the query
+export const searchOccupations = (q, limit = 8) => {
+  const needle = (q || '').trim().toLowerCase();
+  if (needle.length < 2) return [];
+  const names = new Set([
+    ...CURATED_PACKS.map((p) => titleCase(p.role_name)),
+    ...[...OCCUPATIONS.values()].map((o) => o.name),
+  ]);
+  return [...names]
+    .filter((n) => n.toLowerCase().includes(needle))
+    .sort((a, b) => (a.toLowerCase().startsWith(needle) ? 0 : 1) - (b.toLowerCase().startsWith(needle) ? 0 : 1) || a.length - b.length)
+    .slice(0, limit);
 };

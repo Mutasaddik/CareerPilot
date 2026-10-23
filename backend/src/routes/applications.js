@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/authMiddleware.js';
 import {
   STATUSES, listApplications, getApplicationStats, trackJob,
   createManualApplication, updateApplication, deleteApplication,
+  ROUND_TYPES, addInterview, updateInterview, deleteInterview, getNextInterview,
 } from '../services/applicationService.js';
 import { deleteCachePattern } from '../models/redis.js';
 import logger from '../services/loggerService.js';
@@ -96,6 +97,57 @@ router.delete('/:id', param('id').isUUID(), validId, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to delete application.' });
+  }
+});
+
+// ── Interviews ────────────────────────────────────────────────────
+// GET /applications/interviews/next — soonest upcoming interview (dashboard)
+router.get('/interviews/next', async (req, res) => {
+  try {
+    res.json({ success: true, interview: await getNextInterview(req.user.id) });
+  } catch (err) {
+    logger.error('Next interview error', { error: err.message });
+    res.status(500).json({ success: false, error: 'Failed to fetch next interview.' });
+  }
+});
+
+const interviewFields = (required) => [
+  required
+    ? body('scheduledAt').isISO8601().withMessage('Pick the interview date and time')
+    : body('scheduledAt').optional().isISO8601(),
+  body('roundType').optional({ values: 'falsy' }).isIn(ROUND_TYPES),
+  body('prepNotes').optional({ values: 'null' }).isLength({ max: 5000 }),
+];
+
+router.post('/:id/interviews', param('id').isUUID(), validId, interviewFields(true), validate, async (req, res) => {
+  try {
+    const interview = await addInterview(req.params.id, req.user.id, req.body);
+    if (!interview) return res.status(404).json({ success: false, error: 'Application not found.' });
+    res.status(201).json({ success: true, interview });
+  } catch (err) {
+    logger.error('Add interview error', { error: err.message });
+    res.status(500).json({ success: false, error: 'Failed to add interview.' });
+  }
+});
+
+router.patch('/interviews/:iid', param('iid').isUUID(), validId, interviewFields(false), validate, async (req, res) => {
+  try {
+    const interview = await updateInterview(req.params.iid, req.user.id, req.body);
+    if (!interview) return res.status(404).json({ success: false, error: 'Interview not found.' });
+    res.json({ success: true, interview });
+  } catch (err) {
+    logger.error('Update interview error', { error: err.message });
+    res.status(500).json({ success: false, error: 'Failed to update interview.' });
+  }
+});
+
+router.delete('/interviews/:iid', param('iid').isUUID(), validId, async (req, res) => {
+  try {
+    const deleted = await deleteInterview(req.params.iid, req.user.id);
+    if (!deleted) return res.status(404).json({ success: false, error: 'Interview not found.' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to delete interview.' });
   }
 });
 

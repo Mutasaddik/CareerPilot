@@ -14,17 +14,17 @@ import JobDetailDrawer from '../components/jobs/JobDetailDrawer.jsx';
 const JobCardSkeleton = () => (
   <div className="glass-card p-4 animate-pulse space-y-3">
     <div className="flex items-start gap-3">
-      <div className="w-10 h-10 rounded-xl bg-white/8 shrink-0" />
+      <div className="w-10 h-10 rounded-xl bg-fg/8 shrink-0" />
       <div className="flex-1 space-y-2">
-        <div className="h-3 bg-white/8 rounded w-3/4" />
-        <div className="h-2.5 bg-white/5 rounded w-1/2" />
+        <div className="h-3 bg-fg/8 rounded w-3/4" />
+        <div className="h-2.5 bg-fg/5 rounded w-1/2" />
       </div>
     </div>
-    <div className="h-6 bg-white/5 rounded-full w-32" />
-    <div className="h-px bg-white/8" />
+    <div className="h-6 bg-fg/5 rounded-full w-32" />
+    <div className="h-px bg-fg/8" />
     <div className="flex justify-between">
-      <div className="h-2.5 bg-white/5 rounded w-24" />
-      <div className="h-2.5 bg-white/5 rounded w-16" />
+      <div className="h-2.5 bg-fg/5 rounded w-24" />
+      <div className="h-2.5 bg-fg/5 rounded w-16" />
     </div>
   </div>
 );
@@ -66,24 +66,41 @@ const EmptyState = ({ search, onClear, onRegen, regenLoading }) => (
 );
 
 // ── Stats bar ─────────────────────────────────────────────────────
-const StatsBar = ({ stats }) => {
+// Counts that help browsing; the three score tiles double as filters
+// (same thresholds as the match dropdown: 90 / 70 / 50).
+const StatsBar = ({ stats, minScore, onFilter }) => {
   if (!stats) return null;
+  const n = (v) => parseInt(v) || 0;
+  const tiles = [
+    { label: 'Strong matches (70%+)',  value: n(stats.strong_matches), icon: Briefcase,  color: 'text-brand-cyan', filter: 70 },
+    { label: 'Excellent (90%+)',       value: n(stats.excellent),      icon: Star,       color: 'text-green-400',  filter: 90 },
+    { label: 'Worth a look (50–69%)',  value: n(stats.good),           icon: TrendingUp, color: 'text-amber-400',  filter: 50 },
+    { label: 'New this week',          value: n(stats.new_this_week),  icon: Sparkles,   color: 'text-purple-400' },
+  ];
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-      {[
-        { label: 'Total Matched',    value: stats.total_matched || 0,   icon: Briefcase,  color: 'text-brand-cyan' },
-        { label: 'Excellent (90%+)', value: stats.excellent || 0,       icon: Star,       color: 'text-green-400'  },
-        { label: 'Strong (70%+)',    value: stats.strong || 0,          icon: TrendingUp, color: 'text-amber-400'  },
-        { label: 'Top Score',        value: `${stats.top_score || 0}%`, icon: Star,       color: 'text-purple-400' },
-      ].map(({ label, value, icon: Icon, color }) => (
-        <div key={label} className="glass-card p-3 flex items-center gap-3">
-          <Icon className={`w-5 h-5 ${color} shrink-0`} />
-          <div>
-            <p className={`text-lg font-bold ${color}`}>{value}</p>
-            <p className="text-text-muted text-xs">{label}</p>
-          </div>
-        </div>
-      ))}
+      {tiles.map(({ label, value, icon: Icon, color, filter }) => {
+        const active = filter !== undefined && filter === minScore;
+        const content = (
+          <>
+            <Icon className={`w-5 h-5 ${color} shrink-0`} />
+            <div>
+              <p className={`text-lg font-bold ${color}`}>{value}</p>
+              <p className="text-text-muted text-xs">{label}</p>
+            </div>
+          </>
+        );
+        return filter === undefined ? (
+          <div key={label} className="glass-card p-3 flex items-center gap-3">{content}</div>
+        ) : (
+          <button key={label} onClick={() => onFilter(filter)} aria-pressed={active}
+            title={active ? 'Showing these jobs' : filter === 50 ? 'Show every job scoring 50% or more' : `Show jobs scoring ${filter}% or more`}
+            className={`glass-card card-interactive p-3 flex items-center gap-3 text-left
+              ${active ? 'border-brand-cyan/50 ring-1 ring-brand-cyan/30' : ''}`}>
+            {content}
+          </button>
+        );
+      })}
     </div>
   );
 };
@@ -103,7 +120,7 @@ const RegenerateButton = ({ onRegen, regenLoading, regenStatus }) => {
         data-testid="regenerate-jobs-btn"
         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all
           ${exhausted
-            ? 'bg-white/3 border-white/8 text-text-muted cursor-not-allowed'
+            ? 'bg-fg/3 border-fg/8 text-text-muted cursor-not-allowed'
             : regenLoading
               ? 'bg-brand-cyan/10 border-brand-cyan/30 text-brand-cyan cursor-wait'
               : 'bg-brand-cyan/10 border-brand-cyan/30 text-brand-cyan hover:bg-brand-cyan/20 hover:border-brand-cyan/50'
@@ -114,7 +131,7 @@ const RegenerateButton = ({ onRegen, regenLoading, regenStatus }) => {
           : <Sparkles className="w-4 h-4" />}
         {regenLoading ? 'Refreshing…' : 'Regenerate'}
         {remaining !== null && !exhausted && (
-          <span className="ml-1 px-1.5 py-0.5 rounded-md bg-white/10 text-xs text-text-muted">
+          <span className="ml-1 px-1.5 py-0.5 rounded-md bg-fg/10 text-xs text-text-muted">
             {remaining}/{limit}
           </span>
         )}
@@ -252,7 +269,7 @@ export default function Jobs() {
       </AnimatePresence>
 
       {/* Topbar */}
-      <div className="sticky top-0 z-30 bg-bg-primary/80 backdrop-blur-xl border-b border-white/8 px-6 py-4">
+      <div className="sticky top-0 z-30 bg-bg-primary/80 backdrop-blur-xl border-b border-fg/8 px-6 py-4">
         <div className="flex items-center gap-4 max-w-7xl mx-auto">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
@@ -260,7 +277,7 @@ export default function Jobs() {
               type="text"
               placeholder="Search jobs, companies, skills…"
               onChange={(e) => handleSearch(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-text-primary placeholder-text-muted text-sm focus:outline-none focus:border-brand-cyan/50 transition-colors"
+              className="w-full bg-fg/5 border border-fg/10 rounded-xl pl-10 pr-4 py-2.5 text-text-primary placeholder-text-muted text-sm focus:outline-none focus:border-brand-cyan/50 transition-colors"
             />
           </div>
 
@@ -270,7 +287,7 @@ export default function Jobs() {
             <select
               value={minScore}
               onChange={(e) => setMinScore(parseInt(e.target.value))}
-              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-text-primary text-sm focus:outline-none focus:border-brand-cyan/50"
+              className="bg-fg/5 border border-fg/10 rounded-xl px-3 py-2.5 text-text-primary text-sm focus:outline-none focus:border-brand-cyan/50"
             >
               <option value={50}>All Matches</option>
               <option value={70}>70%+ Match</option>
@@ -279,7 +296,7 @@ export default function Jobs() {
           </div>
 
           {/* View toggle */}
-          <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl p-1 shrink-0">
+          <div className="flex items-center gap-1 bg-fg/5 border border-fg/10 rounded-xl p-1 shrink-0">
             <button
               onClick={() => setViewMode('card')}
               className={`p-1.5 rounded-lg transition-colors ${viewMode === 'card' ? 'bg-brand-cyan/20 text-brand-cyan' : 'text-text-muted hover:text-text-primary'}`}
@@ -297,7 +314,7 @@ export default function Jobs() {
           {/* Refresh cached results */}
           <button
             onClick={() => refetch()}
-            className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-text-muted hover:text-brand-cyan transition-colors shrink-0"
+            className="p-2.5 rounded-xl bg-fg/5 border border-fg/10 text-text-muted hover:text-brand-cyan transition-colors shrink-0"
             title="Refresh current results"
           >
             <RefreshCw className="w-4 h-4" />
@@ -314,7 +331,7 @@ export default function Jobs() {
 
       {/* Main content */}
       <div className="max-w-7xl mx-auto px-6 py-6">
-        <StatsBar stats={statsData?.stats} />
+        <StatsBar stats={statsData?.stats} minScore={minScore} onFilter={setMinScore} />
 
         {!isLoading && jobs.length > 0 && (
           <p className="text-text-muted text-sm mb-4">
@@ -323,7 +340,7 @@ export default function Jobs() {
           </p>
         )}
 
-        <motion.div layout className={`grid gap-4 ${viewMode === "card" ? "grid-cols-1 md:grid-cols-2 xl:grid-cols-3" : "grid-cols-1"}`}>
+        <motion.div layout className={`grid gap-4 ${viewMode === "card" ? "job-grid" : "grid-cols-1"}`}>
           {isLoading
             ? Array.from({ length: 6 }).map((_, i) => <JobCardSkeleton key={i} />)
             : jobs.length === 0

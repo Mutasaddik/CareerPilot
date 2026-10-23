@@ -12,7 +12,7 @@ import { testConnection as testRedis } from './models/redis.js';
 import { generalLimiter } from './middleware/rateLimiter.js';
 
 import healthRouter      from './routes/health.js';
-import { loadTaxonomy, loadRoleMappings, loadCuratedPacks } from './services/taxonomyService.js';
+import { loadTaxonomy, loadRoleMappings, loadCuratedPacks, loadOccupations } from './services/taxonomyService.js';
 import { scheduleJobSync } from './services/jobSyncService.js';
 import { removeLegacyRepeatableJobs } from './queue/scraperQueue.js';
 import maintenanceRouter from './routes/maintenance.js';
@@ -24,6 +24,8 @@ import adminRouter       from './routes/admin.js';
 import superAdminRouter  from './routes/superadmin.js';
 import moderatorRouter   from './routes/moderator.js';
 import applicationsRouter from './routes/applications.js';
+import marketRouter       from './routes/market.js';
+import certificationsRouter from './routes/certifications.js';
 
 const app        = express();
 const httpServer = createServer(app);
@@ -53,6 +55,8 @@ app.use('/api/v1/user',        userRouter);
 app.use('/api/v1/cv',          cvRouter);
 app.use('/api/v1/jobs',        jobsRouter);
 app.use('/api/v1/applications', applicationsRouter);
+app.use('/api/v1/market',       marketRouter);
+app.use('/api/v1/certifications', certificationsRouter);
 app.use('/api/v1/admin',       adminRouter);
 app.use('/api/v1/superadmin',  superAdminRouter);
 app.use('/api/v1/moderator',   moderatorRouter);
@@ -86,6 +90,7 @@ const start = async () => {
   await loadTaxonomy();
   await loadRoleMappings();
   await loadCuratedPacks();
+  await loadOccupations();
   await removeLegacyRepeatableJobs().catch((err) => logger.warn('Could not clear legacy scraper schedule', { error: err.message }));
   scheduleJobSync();
 

@@ -401,7 +401,7 @@ export default function SuperAdminDashboard() {
                 max={30}
                 value={regenLimitInput}
                 onChange={(e) => setRegenLimitInput(e.target.value)}
-                className="w-20 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-text-primary text-sm focus:outline-none focus:border-superadmin/50 text-center"
+                className="w-20 bg-fg/5 border border-fg/10 rounded-lg px-3 py-1.5 text-text-primary text-sm focus:outline-none focus:border-superadmin/50 text-center"
               />
               <span className="text-text-muted text-xs">times/day (2–30)</span>
             </div>

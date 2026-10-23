@@ -164,14 +164,14 @@ export default function CVRewriteEditor({ rewriteId, onClose }) {
         className="glass-card w-full max-w-4xl flex flex-col overflow-hidden sm:rounded-2xl"
       >
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-white/8 shrink-0">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-fg/8 shrink-0">
           <div className="flex-1 min-w-0">
             <p className="text-text-primary font-bold truncate">{rewrite?.title || 'Rewritten CV'}</p>
             <p className="text-text-muted text-xs">Review every line before sending — you know your experience best.</p>
           </div>
           {notice && <span className="text-xs text-text-secondary hidden sm:inline">{notice}</span>}
           <button onClick={() => saveMut.mutate()} disabled={!cv || !dirty || saveMut.isPending}
-            className="px-3 py-2 rounded-xl text-sm flex items-center gap-1.5 bg-white/5 border border-white/10 text-text-primary hover:bg-white/10 disabled:opacity-40 transition-colors">
+            className="px-3 py-2 rounded-xl text-sm flex items-center gap-1.5 bg-fg/5 border border-fg/10 text-text-primary hover:bg-fg/10 disabled:opacity-40 transition-colors">
             {saveMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Save
           </button>
@@ -180,7 +180,7 @@ export default function CVRewriteEditor({ rewriteId, onClose }) {
             <Download className="w-4 h-4" /> PDF
           </button>
           <button onClick={() => { if (!dirty || window.confirm('Discard unsaved changes?')) onClose(); }}
-            className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-white/5">
+            className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-fg/5">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -227,7 +227,7 @@ export default function CVRewriteEditor({ rewriteId, onClose }) {
                   Experience
                 </SectionTitle>
                 {cv.experience.map((e, i) => (
-                  <div key={i} className="p-3 rounded-xl bg-white/3 border border-white/8 space-y-2">
+                  <div key={i} className="p-3 rounded-xl bg-fg/3 border border-fg/8 space-y-2">
                     <div className="flex gap-2">
                       <div className="flex-1 grid sm:grid-cols-2 gap-2">
                         <Field placeholder="Job title" value={e.title} onChange={(v) => updateIn('experience', i, { title: v })} />
@@ -246,7 +246,7 @@ export default function CVRewriteEditor({ rewriteId, onClose }) {
               <div className="space-y-3">
                 <SectionTitle onAdd={() => update({ projects: [...cv.projects, { name: '', bullets: [] }] })}>Projects</SectionTitle>
                 {cv.projects.map((p, i) => (
-                  <div key={i} className="p-3 rounded-xl bg-white/3 border border-white/8 space-y-2">
+                  <div key={i} className="p-3 rounded-xl bg-fg/3 border border-fg/8 space-y-2">
                     <div className="flex gap-2">
                       <div className="flex-1"><Field placeholder="Project name" value={p.name} onChange={(v) => updateIn('projects', i, { name: v })} /></div>
                       <RemoveBtn onClick={() => removeAt('projects', i)} />
@@ -260,7 +260,7 @@ export default function CVRewriteEditor({ rewriteId, onClose }) {
               <div className="space-y-3">
                 <SectionTitle onAdd={() => update({ education: [...cv.education, { degree: '', institution: '', dates: '', details: '' }] })}>Education</SectionTitle>
                 {cv.education.map((ed, i) => (
-                  <div key={i} className="p-3 rounded-xl bg-white/3 border border-white/8 flex gap-2">
+                  <div key={i} className="p-3 rounded-xl bg-fg/3 border border-fg/8 flex gap-2">
                     <div className="flex-1 grid sm:grid-cols-2 gap-2">
                       <Field placeholder="Degree" value={ed.degree} onChange={(v) => updateIn('education', i, { degree: v })} />
                       <Field placeholder="Institution" value={ed.institution} onChange={(v) => updateIn('education', i, { institution: v })} />

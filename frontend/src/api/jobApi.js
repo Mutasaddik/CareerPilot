@@ -50,3 +50,9 @@ export const fetchRegenStatus = async () => {
     return { used: 0, limit: 5, remaining: 5 };
   }
 };
+
+// Strong matches you haven't applied to whose deadline is within 7 days
+export const fetchClosingSoon = async () => {
+  const res = await api.get('/jobs/closing-soon');
+  return res.data;
+};

@@ -80,7 +80,7 @@ export default function CVUpload({ onSuccess, onClose }) {
       initial={{ opacity: 0, scale: 0.97 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.97 }}
-      className="relative bg-[#0f1629]/95 border border-white/10 rounded-2xl p-6 w-full max-w-lg mx-auto shadow-2xl"
+      className="relative surface-raised rounded-2xl p-6 w-full max-w-lg mx-auto"
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
@@ -89,7 +89,7 @@ export default function CVUpload({ onSuccess, onClose }) {
           <p className="text-text-secondary text-xs mt-0.5">PDF or DOCX · Max 10MB</p>
         </div>
         {onClose && (
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors p-1 rounded-lg hover:bg-white/5">
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors p-1 rounded-lg hover:bg-fg/5">
             <X className="w-5 h-5" />
           </button>
         )}
@@ -102,7 +102,7 @@ export default function CVUpload({ onSuccess, onClose }) {
         onDragLeave={onDragLeave}
         onClick={() => !selectedFile && inputRef.current?.click()}
         className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 cursor-pointer
-          ${dragOver    ? 'border-brand-cyan bg-brand-cyan/5 scale-[1.01]' : 'border-white/15 hover:border-white/30 hover:bg-white/2'}
+          ${dragOver    ? 'border-brand-cyan bg-brand-cyan/5 scale-[1.01]' : 'border-fg/15 hover:border-fg/30 hover:bg-fg/2'}
           ${selectedFile ? 'cursor-default' : ''}
           ${isDone       ? 'border-green-500/40 bg-green-500/5' : ''}
         `}
@@ -126,7 +126,7 @@ export default function CVUpload({ onSuccess, onClose }) {
             <motion.div key="uploading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3">
               <Loader2 className="w-10 h-10 text-brand-cyan animate-spin" />
               <p className="text-text-primary font-medium">Uploading…</p>
-              <div className="w-full max-w-xs bg-white/10 rounded-full h-2 overflow-hidden">
+              <div className="w-full max-w-xs bg-fg/10 rounded-full h-2 overflow-hidden">
                 <motion.div
                   className="h-full bg-gradient-to-r from-brand-cyan to-purple-500 rounded-full"
                   animate={{ width: `${uploadProgress}%` }}
@@ -185,7 +185,7 @@ export default function CVUpload({ onSuccess, onClose }) {
               className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all
                 ${scope === opt.value
                   ? 'border-brand-cyan/50 bg-brand-cyan/5'
-                  : 'border-white/8 hover:border-white/20 hover:bg-white/2'}`}
+                  : 'border-fg/8 hover:border-fg/20 hover:bg-fg/2'}`}
             >
               <input
                 type="radio"
@@ -210,7 +210,7 @@ export default function CVUpload({ onSuccess, onClose }) {
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
                   placeholder="Enter company name (e.g. Google, Grameenphone)"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-text-primary placeholder-text-muted text-sm focus:outline-none focus:border-brand-cyan/50 transition-colors mt-2"
+                  className="w-full bg-fg/5 border border-fg/10 rounded-xl px-4 py-2.5 text-text-primary placeholder-text-muted text-sm focus:outline-none focus:border-brand-cyan/50 transition-colors mt-2"
                 />
               </motion.div>
             )}

@@ -139,6 +139,41 @@ CREATE TABLE IF NOT EXISTS cv_rewrites (
 
 CREATE INDEX IF NOT EXISTS idx_cv_rewrites_user ON cv_rewrites(user_id, updated_at DESC);
 
+-- ── Salary benchmarks (imported, e.g. Betonkemon) ────────────────
+-- Fallback salary for job ads that don't list one. Rows are imported
+-- from a file (npm run import:salaries); each designation is mapped to a
+-- role family at import time. Monthly BDT.
+CREATE TABLE IF NOT EXISTS salary_benchmarks (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  source            VARCHAR(50)  NOT NULL,
+  designation       VARCHAR(255) NOT NULL,
+  role_family       VARCHAR(100) NOT NULL,
+  experience_level  VARCHAR(20),
+  company           VARCHAR(255),
+  salary_min_bdt    INTEGER NOT NULL,
+  salary_max_bdt    INTEGER,
+  source_url        TEXT,
+  imported_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_salary_benchmarks_role ON salary_benchmarks(role_family, experience_level);
+
+-- ── Occupations (O*NET) and their classification on jobs/users ──
+-- ~1,000 occupations; every job is classified once into one of them (or a
+-- curated Bangladesh track) so matching works for any profession.
+CREATE TABLE IF NOT EXISTS taxonomy_occupations (
+  onet_code   VARCHAR(10) PRIMARY KEY,
+  title       VARCHAR(255) NOT NULL,
+  description TEXT
+);
+
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS occupation_key  VARCHAR(120);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS occupation_name VARCHAR(255);
+CREATE INDEX IF NOT EXISTS idx_jobs_occupation ON jobs(occupation_key);
+
+-- The profession the user confirmed ("Yes, that's me") — ground truth for matching
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS confirmed_role VARCHAR(160);
+
 -- ── Job Matches ──────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS job_matches (
   user_id              UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -250,6 +285,9 @@ CREATE TABLE IF NOT EXISTS interviews_scheduled (
 );
 
 CREATE INDEX IF NOT EXISTS idx_interviews_user ON interviews_scheduled(user_id);
+-- Interviews added from the tracker belong to an application
+ALTER TABLE interviews_scheduled ADD COLUMN IF NOT EXISTS application_id UUID REFERENCES applications(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_interviews_upcoming ON interviews_scheduled(user_id, scheduled_at);
 
 -- ── Learning Roadmaps ────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS learning_roadmaps (
