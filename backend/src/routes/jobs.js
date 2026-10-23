@@ -122,9 +122,11 @@ router.get('/:id', async (req, res) => {
   try {
     const userId = req.user.id;
     const result = await query(
-      `SELECT j.*, jm.relevance_score, jm.match_breakdown_json, jm.seen, jm.user_feedback
+      `SELECT j.*, jm.relevance_score, jm.match_breakdown_json, jm.seen, jm.user_feedback,
+              a.id AS application_id, a.status AS application_status
        FROM jobs j
        LEFT JOIN job_matches jm ON jm.job_id = j.id AND jm.user_id = $1
+       LEFT JOIN applications a ON a.job_id = j.id AND a.user_id = $1
        WHERE j.id = $2`,
       [userId, req.params.id]
     );

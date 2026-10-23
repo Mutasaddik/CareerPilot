@@ -23,6 +23,7 @@ import jobsRouter        from './routes/jobs.js';
 import adminRouter       from './routes/admin.js';
 import superAdminRouter  from './routes/superadmin.js';
 import moderatorRouter   from './routes/moderator.js';
+import applicationsRouter from './routes/applications.js';
 
 const app        = express();
 const httpServer = createServer(app);
@@ -51,6 +52,7 @@ app.use('/api/v1/auth',        authRouter);
 app.use('/api/v1/user',        userRouter);
 app.use('/api/v1/cv',          cvRouter);
 app.use('/api/v1/jobs',        jobsRouter);
+app.use('/api/v1/applications', applicationsRouter);
 app.use('/api/v1/admin',       adminRouter);
 app.use('/api/v1/superadmin',  superAdminRouter);
 app.use('/api/v1/moderator',   moderatorRouter);

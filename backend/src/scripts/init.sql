@@ -166,12 +166,21 @@ CREATE TABLE IF NOT EXISTS applications (
   applied_date     DATE,
   cv_version_used  UUID REFERENCES cvs(id) ON DELETE SET NULL,
   offer_salary_bdt INTEGER,
+  -- Snapshot of the job, so manual entries and expired/deleted jobs still display
+  company          VARCHAR(255),
+  job_title        VARCHAR(500),
+  job_url          TEXT,
+  location         VARCHAR(255),
+  -- [{ "status": "applied", "at": "2026-10-23T10:00:00Z" }, ...]
+  history          JSONB NOT NULL DEFAULT '[]',
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_applications_user ON applications(user_id);
 CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
+-- One application per job per user (manual entries have no job_id)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_applications_user_job ON applications(user_id, job_id) WHERE job_id IS NOT NULL;
 
 -- ── Cover Letters ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS cover_letters (

@@ -26,6 +26,7 @@ import ModeratorDashboard  from './pages/moderator/ModeratorDashboard.jsx';
 import Jobs                from './pages/Jobs.jsx';
 import CVStudio            from './pages/CVStudio.jsx';
 import Dashboard           from './pages/Dashboard.jsx';
+import Tracker             from './pages/Tracker.jsx';
 import AuthenticatedLayout from './components/layout/AuthenticatedLayout.jsx';
 
 const checkMaintenance = async () => {
@@ -185,6 +186,7 @@ export default function App() {
           <Route path="/dashboard-home" element={<DashboardGate />} />
           <Route path="/jobs"           element={<Jobs />} />
           <Route path="/cv"             element={<CVStudio />} />
+          <Route path="/tracker"        element={<Tracker />} />
           <Route path="/settings"       element={<Settings />} />
         </Route>
 

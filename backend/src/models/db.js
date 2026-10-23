@@ -3,6 +3,11 @@ import logger from '../services/loggerService.js';
 
 const { Pool } = pg;
 
+// Return DATE columns as plain 'YYYY-MM-DD' strings. By default pg makes a JS
+// Date at local midnight, which serialises to the previous day in UTC for
+// Bangladesh (UTC+6) — deadlines and follow-up dates came back a day early.
+pg.types.setTypeParser(pg.types.builtins.DATE, (value) => value);
+
 const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'localhost',
   port: parseInt(process.env.POSTGRES_PORT || '5432'),

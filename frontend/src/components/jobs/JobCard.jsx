@@ -130,6 +130,11 @@ export default function JobCard({ job, onClick }) {
           <div className="flex-1 min-w-0">
             <p className="text-text-primary font-bold text-sm leading-tight" style={{ textShadow: '0 1px 8px rgba(10,10,20,0.6)' }}>{job?.title}</p>
             <p className="text-text-secondary text-xs mt-0.5 truncate">{job?.company}</p>
+            {job?.application_status && job.application_status !== 'saved' && (
+              <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded border text-green-300 bg-green-500/10 border-green-500/20 capitalize">
+                {job.application_status === 'applied' ? 'Applied ✓' : job.application_status}
+              </span>
+            )}
             <span className="flex items-center gap-1 text-text-muted text-xs mt-1">
               <MapPin className="w-3 h-3" />{job?.location}
               {job?.is_remote && <span className="flex items-center gap-1 text-green-400 ml-1"><Wifi className="w-3 h-3" /> Remote</span>}

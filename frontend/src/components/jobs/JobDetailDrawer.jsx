@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { fetchJobById, saveJob, submitJobFeedback } from '../../api/jobApi.js';
 import { createCVRewrite } from '../../api/cvApi.js';
+import { trackJob } from '../../api/applicationApi.js';
 import useJobStore from '../../store/jobStore.js';
 
 // ── Tab definitions ───────────────────────────────────────────────
@@ -297,9 +298,20 @@ export default function JobDetailDrawer({ job, onClose }) {
     onSuccess:  (res) => navigate(`/cv?rewrite=${res.rewrite.id}`),
   });
 
+  // "Did you apply? Yes" records it in the tracker
+  const trackMut = useMutation({
+    mutationFn: () => trackJob(job.id, 'applied'),
+    onSuccess:  () => {
+      setApplyConfirm(false);
+      updateJob(job.id, { application_status: 'applied' });
+      qc.invalidateQueries({ queryKey: ['applications'] });
+    },
+  });
+  const appStatus = job?.application_status;
+
   const handleApply = () => {
     window.open(job.job_url, '_blank');
-    setApplyConfirm(true);
+    if (!appStatus || appStatus === 'saved') setApplyConfirm(true);
   };
 
   return (
@@ -355,14 +367,14 @@ export default function JobDetailDrawer({ job, onClose }) {
               onClick={handleApply}
               className="w-full btn-primary py-2.5 flex items-center justify-center gap-2 text-sm"
             >
-              Apply Now <ExternalLink className="w-4 h-4" />
+              {appStatus && appStatus !== 'saved' ? 'Open job posting' : 'Apply Now'} <ExternalLink className="w-4 h-4" />
             </motion.button>
           ) : (
             <motion.div key="confirm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-2">
               <p className="flex-1 text-text-secondary text-sm py-2">Did you apply?</p>
-              <button onClick={() => { setApplyConfirm(false); updateJob(job.id, { applied: true }); }}
-                className="px-4 py-2 rounded-xl bg-green-500/20 border border-green-500/30 text-green-400 text-sm font-medium">
-                Yes ✓
+              <button onClick={() => trackMut.mutate()} disabled={trackMut.isPending}
+                className="px-4 py-2 rounded-xl bg-green-500/20 border border-green-500/30 text-green-400 text-sm font-medium flex items-center gap-1">
+                {trackMut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Yes ✓'}
               </button>
               <button onClick={() => setApplyConfirm(false)}
                 className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-text-muted text-sm">
@@ -371,6 +383,13 @@ export default function JobDetailDrawer({ job, onClose }) {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {appStatus && appStatus !== 'saved' && (
+          <Link to="/tracker"
+            className="mt-2 flex items-center justify-center gap-1.5 text-xs text-green-400 hover:underline">
+            <CheckCircle className="w-3.5 h-3.5" /> In your tracker: {appStatus.charAt(0).toUpperCase() + appStatus.slice(1)}
+          </Link>
+        )}
 
         <button
           onClick={() => tailorMut.mutate()}

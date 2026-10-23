@@ -354,9 +354,11 @@ export const getMatchedJobsForUser = async (userId, { limit = 20, offset = 0, mi
          jm.match_breakdown_json,
          jm.seen,
          jm.alerted,
-         jm.user_feedback
+         jm.user_feedback,
+         a.status AS application_status
        FROM jobs j
        JOIN job_matches jm ON jm.job_id = j.id
+       LEFT JOIN applications a ON a.job_id = j.id AND a.user_id = jm.user_id
        WHERE ${where}
        ORDER BY jm.relevance_score DESC, j.scraped_at DESC
        LIMIT $${n + 1} OFFSET $${n + 2}`,
