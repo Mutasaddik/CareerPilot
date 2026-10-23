@@ -333,7 +333,7 @@ export default function CVStudio() {
     <div className="min-h-screen bg-bg-primary">
       {/* Topbar */}
       <div className="sticky top-0 z-30 bg-bg-primary/80 backdrop-blur-xl border-b border-fg/8 px-6 py-4">
-        <div className="flex items-center justify-between max-w-7xl mx-auto">
+        <div className="flex items-center justify-between w-full">
           <div>
             <h1 className="text-text-primary font-bold text-xl">CV Studio</h1>
             <p className="text-text-secondary text-xs mt-0.5">Manage your CV versions · AI-powered ATS analysis</p>
@@ -349,7 +349,7 @@ export default function CVStudio() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="w-full px-4 md:px-6 py-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Left: CV Version List */}
         <div className="lg:col-span-1 space-y-3">

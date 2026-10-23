@@ -14,7 +14,7 @@ export default function Certifications() {
   return (
     <div className="min-h-screen bg-bg-primary">
       <div className="sticky top-0 z-30 bg-bg-primary/80 backdrop-blur-xl border-b border-fg/8 px-4 sm:px-6 py-4">
-        <div className="max-w-5xl mx-auto">
+        <div className="w-full">
           <h1 className="text-text-primary font-bold text-xl">Certifications</h1>
           <p className="text-text-secondary text-xs mt-0.5">
             {data?.role
@@ -24,7 +24,7 @@ export default function Certifications() {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-8">
+      <div className="w-full px-4 md:px-6 py-6 space-y-8">
         {isLoading && <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-brand-cyan" /></div>}
         {isError && <p className="text-danger text-sm text-center py-10">Couldn't load certifications. Please try again.</p>}
 
@@ -49,7 +49,7 @@ export default function Certifications() {
               </p>
               {fromAds.length === 0
                 ? <p className="text-text-secondary text-sm glass-card p-4">No certifications requested in your field's ads yet. This fills in as more ads arrive.</p>
-                : <div className="grid gap-3 md:grid-cols-2">{fromAds.map((c) => <CertificationCard key={c.id} cert={c} role={data.role} />)}</div>}
+                : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{fromAds.map((c) => <CertificationCard key={c.id} cert={c} role={data.role} />)}</div>}
             </section>
 
             {recognised.length > 0 && (
@@ -61,7 +61,7 @@ export default function Certifications() {
                 <p className="text-text-muted text-xs">
                   Well-known certifications for {data.role}. Not requested in the ads we've seen yet — a plus, not a must.
                 </p>
-                <div className="grid gap-3 md:grid-cols-2">{recognised.map((c) => <CertificationCard key={c.id} cert={c} role={data.role} />)}</div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{recognised.map((c) => <CertificationCard key={c.id} cert={c} role={data.role} />)}</div>
               </section>
             )}
 

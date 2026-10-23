@@ -19,6 +19,9 @@ docker-compose up -d
 cd backend
 npm install
 npm run dev
+# On the first start with an empty database the backend creates and fills
+# the job taxonomy (O*NET skills, job titles, occupations, role tracks)
+# by itself — no seed commands needed.
 # API → http://localhost:5000
 # Health → http://localhost:5000/api/v1/health
 

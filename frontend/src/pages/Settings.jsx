@@ -11,7 +11,7 @@ import { setTheme, useTheme } from '../utils/theme.js';
 import { logoutUser } from '../api/authApi.js';
 import useAuthStore from '../store/authStore.js';
 import useUserStore from '../store/userStore.js';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import RolePicker from '../components/profile/RolePicker.jsx';
 import ProfessionCard from '../components/profile/ProfessionCard.jsx';
@@ -126,7 +126,9 @@ export default function Settings() {
   const authUser    = useAuthStore((s) => s.user);
   const setProfile  = useUserStore((s) => s.setProfile);
 
-  const [tab,               setTab]               = useState('profile');
+  // ?tab=preferences opens a tab directly (used by the dashboard's profile checklist)
+  const [searchParams] = useSearchParams();
+  const [tab,               setTab]               = useState(() => searchParams.get('tab') || 'profile');
   const [toast,             setToast]             = useState(null);
   const [editMode,          setEditMode]          = useState(false);
   const [showSaveConfirm,   setShowSaveConfirm]   = useState(false);
@@ -320,7 +322,7 @@ export default function Settings() {
   return (
     <div className="min-h-screen bg-bg-primary">
       <div className="border-b border-border bg-bg-secondary/80 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+        <div className="w-full px-4 md:px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link to="/dashboard" className="w-8 h-8 rounded-lg bg-brand-gradient flex items-center justify-center shadow-glow-brand">
               <Zap className="w-4 h-4 text-white" />
@@ -336,7 +338,7 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-8">
+      <div className="w-full px-4 md:px-6 py-8">
         <div className="mb-8">
           <h1 className="font-display font-bold text-2xl text-text-primary">Settings</h1>
           <p className="text-text-secondary text-sm mt-1">Manage your account, preferences and privacy.</p>

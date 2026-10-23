@@ -1,6 +1,8 @@
 // Curated, industry-standard keyword packs for common roles.
 // Bridge layer until Phase 6 provides real scraped market-demand data.
 import 'dotenv/config';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import pool, { query } from '../models/db.js';
 
 const PACKS = [
@@ -81,6 +83,10 @@ const PACKS = [
     ['devops engineer','site reliability engineer','sre','cloud engineer','infrastructure engineer'],
     ['ci/cd','infrastructure as code','containerization','monitoring','automation','cloud architecture','deployment pipelines','incident management'],
     ['docker','kubernetes','jenkins','aws','terraform','linux','git','ansible','prometheus']],
+  ['mobile developer',
+    ['mobile developer','flutter developer','android developer','ios developer','react native developer','mobile application developer','mobile engineer'],
+    ['mobile development','cross-platform development','app store deployment','push notifications','rest api integration','offline storage','responsive ui','app performance'],
+    ['flutter','react native','kotlin','swift','firebase','dart','android studio','xcode','git']],
   // Operations / client relations — common for BBA graduates in Bangladesh
   ['operations executive',
     ['operations executive','operations officer','operations coordinator','operations associate','operations manager',
@@ -97,7 +103,7 @@ const PACKS = [
     ['core banking','t24','finacle','flexcube','microsoft excel','crm']],
 ];
 
-const run = async () => {
+export const seedRoleKeywords = async () => {
   let n = 0;
   for (const [role, syn, kw, tools] of PACKS) {
     const r = await query(
@@ -109,6 +115,9 @@ const run = async () => {
     n += r.rowCount;
   }
   console.log(`✅ ${n} curated role keyword packs seeded`);
-  await pool.end();
 };
-run().catch((e) => { console.error('❌', e.message); process.exit(1); });
+// Run directly with `npm run seed:rolekeywords` — the backend also runs this
+// automatically at startup when needed (see services/setupService.js)
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  seedRoleKeywords().then(() => pool.end()).catch((err) => { console.error('❌ Seed failed:', err.message); process.exit(1); });
+}

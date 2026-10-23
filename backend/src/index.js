@@ -15,6 +15,7 @@ import healthRouter      from './routes/health.js';
 import { loadTaxonomy, loadRoleMappings, loadCuratedPacks, loadOccupations } from './services/taxonomyService.js';
 import { scheduleJobSync } from './services/jobSyncService.js';
 import { removeLegacyRepeatableJobs } from './queue/scraperQueue.js';
+import { ensureTaxonomy } from './services/setupService.js';
 import maintenanceRouter from './routes/maintenance.js';
 import authRouter        from './routes/auth.js';
 import userRouter        from './routes/user.js';
@@ -87,6 +88,7 @@ const start = async () => {
   const redisOk = await testRedis();
   if (!dbOk)    { logger.error('PostgreSQL unavailable'); process.exit(1); }
   if (!redisOk) { logger.error('Redis unavailable');      process.exit(1); }
+  await ensureTaxonomy();   // creates + seeds taxonomy tables on a fresh database
   await loadTaxonomy();
   await loadRoleMappings();
   await loadCuratedPacks();

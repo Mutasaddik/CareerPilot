@@ -405,7 +405,7 @@ export default function Tracker() {
     <div className="min-h-screen bg-bg-primary">
       {/* Header */}
       <div className="sticky top-0 z-30 bg-bg-primary/80 backdrop-blur-xl border-b border-fg/8 px-4 sm:px-6 py-4">
-        <div className="flex items-center justify-between gap-3 max-w-7xl mx-auto">
+        <div className="flex items-center justify-between gap-3 w-full">
           <div>
             <h1 className="text-text-primary font-bold text-xl">Application Tracker</h1>
             <p className="text-text-secondary text-xs mt-0.5">Every job you're pursuing, from saved to offer</p>
@@ -416,7 +416,7 @@ export default function Tracker() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+      <div className="w-full px-4 md:px-6 py-6 space-y-6">
         <StatsStrip stats={stats} />
 
         {isLoading && <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-brand-cyan" /></div>}
@@ -463,7 +463,7 @@ export default function Tracker() {
             {/* Desktop: board */}
             <div className="hidden md:flex gap-4 overflow-x-auto pb-4">
               {STAGES.map((s) => (
-                <div key={s.key} className="w-64 shrink-0 space-y-3">
+                <div key={s.key} className="flex-1 min-w-[11.5rem] space-y-3">
                   <div className="flex items-center justify-between px-1">
                     <span className={`text-xs px-2 py-0.5 rounded-full border ${s.color}`}>{s.label}</span>
                     <span className="text-text-muted text-xs">{byStage[s.key].length}</span>

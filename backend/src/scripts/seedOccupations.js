@@ -9,7 +9,7 @@ import pool, { query } from '../models/db.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FILE = path.join(__dirname, '../../data/onet/Occupation%20Data.txt');
 
-const run = async () => {
+export const seedOccupations = async () => {
   const [header, ...lines] = fs.readFileSync(FILE, 'utf-8').split(/\r?\n/).filter(Boolean);
   const cols = header.split('\t');
   const iCode = cols.indexOf('O*NET-SOC Code'), iTitle = cols.indexOf('Title'), iDesc = cols.indexOf('Description');
@@ -25,7 +25,10 @@ const run = async () => {
     n++;
   }
   console.log(`✅ ${n} occupations seeded`);
-  await pool.end();
 };
 
-run().catch((err) => { console.error('Seed failed:', err.message); process.exit(1); });
+// Run directly with `npm run seed:occupations` — the backend also runs this
+// automatically at startup when needed (see services/setupService.js)
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  seedOccupations().then(() => pool.end()).catch((err) => { console.error('❌ Seed failed:', err.message); process.exit(1); });
+}

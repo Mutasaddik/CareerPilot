@@ -57,7 +57,7 @@ export const getMarketUpdate = async (userId) => {
   const level  = levelFromYears(profile.cvYears);
 
   const jobs = await query(
-    `SELECT title, description, company, posted_date, occupation_key
+    `SELECT title, description, company, posted_date, occupation_key, location, experience_level, is_remote
      FROM jobs WHERE is_expired = FALSE`
   );
   const roleJobs = jobs.rows.filter((j) => roleOf(j) === family);
@@ -99,6 +99,22 @@ export const getMarketUpdate = async (userId) => {
     .slice(0, TOP_COMPANIES)
     .map(([name, count]) => ({ name, jobs: count }));
 
+  // Where the jobs are: city/area (first part of the location), top 4
+  const locationCounts = new Map();
+  for (const job of roleJobs) {
+    const place = (job.location || '').split(/[,(]/)[0].trim().replace(/\s+/g, ' ');
+    if (!place || /^anywhere/i.test(place)) continue;
+    const key = place.charAt(0).toUpperCase() + place.slice(1);
+    locationCounts.set(key, (locationCounts.get(key) || 0) + 1);
+  }
+  const topLocations = [...locationCounts.entries()]
+    .sort((a, b) => b[1] - a[1]).slice(0, 4).map(([name, count]) => ({ name, jobs: count }));
+
+  // Experience levels employers ask for in this field
+  const levels = { entry: 0, mid: 0, senior: 0 };
+  for (const job of roleJobs) if (levels[job.experience_level] !== undefined) levels[job.experience_level]++;
+  const remoteJobs = roleJobs.filter((j) => j.is_remote || /anywhere|remote/i.test(j.location || '')).length;
+
   const salary = await estimateForRole(family, level);
 
   const data = {
@@ -111,6 +127,9 @@ export const getMarketUpdate = async (userId) => {
     top_skills:       topSkills,
     missing_skills:   topSkills.filter((s) => !s.has).map((s) => s.name),
     top_companies:    topCompanies,
+    top_locations:    topLocations,
+    levels,
+    remote_jobs:      remoteJobs,
     // Set when the user's chosen role isn't supported by their CV, so the
     // dashboard can explain why jobs follow the CV instead
     role_note:        profile.roleNote,

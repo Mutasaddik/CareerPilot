@@ -5,16 +5,16 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Briefcase, TrendingUp, Sparkles, Send, CalendarClock, ArrowRight, Upload,
   Check, X as XIcon, Loader2, Building2, Lightbulb, KanbanSquare,
-  CalendarX2, ListChecks, Award, Circle,
+  CalendarX2, ListChecks, Award, Circle, MapPin, Gauge, CheckCircle2, FileText,
 } from 'lucide-react';
 import useAuthStore from '../store/authStore.js';
 import useCVStore from '../store/cvStore.js';
 import useJobStore from '../store/jobStore.js';
 import { fetchJobStats, fetchJobs, fetchClosingSoon } from '../api/jobApi.js';
 import { fetchMyCertifications } from '../api/certificationApi.js';
-import { getMyRole } from '../api/userApi.js';
+import { getMyRole, getUserProfile } from '../api/userApi.js';
 import CertificationCard from '../components/certifications/CertificationCard.jsx';
-import { getAllCVs, createCVRewrite } from '../api/cvApi.js';
+import { getAllCVs, createCVRewrite, getCVRewrites } from '../api/cvApi.js';
 import { fetchApplications, fetchNextInterview } from '../api/applicationApi.js';
 import { fetchMarketUpdate } from '../api/marketApi.js';
 import JobCard from '../components/jobs/JobCard.jsx';
@@ -89,6 +89,30 @@ const ATSGauge = ({ score }) => {
   );
 };
 
+// ── Latest AI-rewritten CVs (general + tailored), quick to reopen ─
+const RewrittenCVs = ({ navigate }) => {
+  const { data } = useQuery({ queryKey: ['cv-rewrites'], queryFn: getCVRewrites });
+  const list = (data?.rewrites || []).slice(0, 2);
+  return (
+    <div className="space-y-2">
+      <p className="text-text-secondary text-xs">Your rewritten CVs</p>
+      {list.length === 0 ? (
+        <p className="text-text-muted text-xs">None yet — rewrite your CV, or tailor it to a job from the job's details.</p>
+      ) : list.map((r) => (
+        <button key={r.id} onClick={() => navigate(`/cv?rewrite=${r.id}`)}
+          className="w-full text-left flex items-center gap-2 p-2.5 rounded-lg border border-fg/8 hover:border-fg/20 transition-colors">
+          <FileText className="w-4 h-4 text-brand-purple shrink-0" />
+          <span className="flex-1 min-w-0">
+            <span className="block text-text-primary text-xs font-medium truncate">{r.title}</span>
+            <span className="block text-text-muted text-[11px]">{r.job_id ? 'Tailored to a job' : 'General'} · {new Date(r.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+          </span>
+          <ArrowRight className="w-3 h-3 text-text-muted shrink-0" />
+        </button>
+      ))}
+    </div>
+  );
+};
+
 // ── Your CV: score + the two most useful fixes ────────────────────
 const CVCard = ({ navigate, atsScore, analysis }) => {
   const hasCV = atsScore !== null && atsScore !== undefined;
@@ -113,6 +137,7 @@ const CVCard = ({ navigate, atsScore, analysis }) => {
           ) : (
             <p className="text-text-muted text-xs text-center">No fixes suggested — your CV covers the basics.</p>
           )}
+          <RewrittenCVs navigate={navigate} />
           <button onClick={() => navigate('/cv')}
             className="w-full text-xs py-2 rounded-xl border border-brand-cyan/30 bg-brand-cyan/10 text-brand-cyan flex items-center justify-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5" /> Rewrite my CV with AI
@@ -142,7 +167,8 @@ const MarketCard = ({ navigate }) => {
     }
     // Missing skills first — they're the useful part
     const skills = [...m.top_skills].sort((a, b) => (a.has - b.has) || (b.percent - a.percent)).slice(0, MAX_SKILLS);
-    const showCompanies = m.top_companies.some((c) => c.jobs > 1);
+    const maxLoc = Math.max(1, ...(m.top_locations || []).map((l) => l.jobs));
+    const levelTotal = (m.levels?.entry || 0) + (m.levels?.mid || 0) + (m.levels?.senior || 0);
     return (
       <div className="space-y-4">
         <p className="text-text-secondary text-xs">{roleName(m.role)} · {m.level}-level</p>
@@ -187,10 +213,44 @@ const MarketCard = ({ navigate }) => {
           </div>
         )}
 
-        {showCompanies && (
+        {/* Where the jobs are + experience wanted, side by side */}
+        <div className="grid gap-5 md:grid-cols-2">
+          {m.top_locations?.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-text-secondary text-xs flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Where the jobs are</p>
+              {m.top_locations.map((l) => (
+                <div key={l.name} className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-text-primary truncate">{l.name}</span>
+                    <span className="text-text-muted shrink-0">{plural(l.jobs, 'job')}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-fg/8 overflow-hidden">
+                    <div className="h-full rounded-full bg-brand-cyan" style={{ width: `${(l.jobs / maxLoc) * 100}%` }} />
+                  </div>
+                </div>
+              ))}
+              {m.remote_jobs > 0 && <p className="text-text-muted text-[11px]">+ {plural(m.remote_jobs, 'job')} open to anywhere in Bangladesh / remote</p>}
+            </div>
+          )}
+          {levelTotal > 0 && (
+            <div className="space-y-2">
+              <p className="text-text-secondary text-xs flex items-center gap-1.5"><Gauge className="w-3.5 h-3.5" /> Experience employers want</p>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                {[['entry', 'Entry'], ['mid', 'Mid'], ['senior', 'Senior']].map(([k, label]) => (
+                  <div key={k} className={`rounded-xl border p-2 ${m.level === k ? 'border-brand-purple/40 bg-brand-purple/5' : 'border-fg/8 bg-fg/3'}`}>
+                    <p className="text-text-primary font-bold">{m.levels[k]}</p>
+                    <p className="text-text-muted text-[11px]">{label}{m.level === k ? ' · you' : ''}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {m.top_companies.length > 0 && (
           <div className="space-y-1.5">
-            <p className="text-text-secondary text-xs">Hiring most right now</p>
-            {m.top_companies.filter((c) => c.jobs > 1).slice(0, 3).map((c) => (
+            <p className="text-text-secondary text-xs">Hiring right now</p>
+            {m.top_companies.slice(0, 3).map((c) => (
               <div key={c.name} className="flex items-center justify-between text-xs">
                 <span className="text-text-primary flex items-center gap-1.5 truncate"><Building2 className="w-3 h-3 text-text-muted shrink-0" />{c.name}</span>
                 <span className="text-text-muted shrink-0">{plural(c.jobs, 'job')}</span>
@@ -329,7 +389,7 @@ const ClosingSoonCard = ({ onOpen }) => {
 // ── Certifications for the user's field (top 3) ───────────────────
 const CertificationsMiniCard = ({ navigate }) => {
   const { data, isLoading } = useQuery({ queryKey: ['certifications'], queryFn: fetchMyCertifications, staleTime: 10 * 60 * 1000 });
-  const top = (data?.certifications || []).filter((c) => !c.has).slice(0, 3);
+  const top = (data?.certifications || []).filter((c) => !c.has).slice(0, 2);
   return (
     <Card>
       <CardHeader icon={Award} title="Certifications" action={data?.role && <LinkButton onClick={() => navigate('/certifications')}>See all</LinkButton>} />
@@ -398,6 +458,56 @@ const WeekTodoCard = ({ navigate, hasCV, onOpenJob }) => {
   );
 };
 
+// ── Profile strength: what's complete, what's missing (real profile data) ──
+const ProfileStrengthCard = ({ navigate, hasCV }) => {
+  const { data: prof }  = useQuery({ queryKey: ['user-profile'], queryFn: getUserProfile });
+  const { data: role }  = useQuery({ queryKey: ['user-role'], queryFn: getMyRole });
+  const { data: rw }    = useQuery({ queryKey: ['cv-rewrites'], queryFn: getCVRewrites });
+  const { data: apps }  = useQuery({ queryKey: ['applications'], queryFn: fetchApplications });
+  const p = prof?.profile;
+  if (!p) return null;
+
+  const items = [
+    { label: 'CV uploaded',                 done: hasCV,                                   to: '/cv' },
+    { label: 'Profession confirmed',        done: !!role?.confirmed,                       to: '/settings?tab=preferences' },
+    { label: 'Target roles chosen',         done: (p.target_roles || []).length > 0,       to: '/settings?tab=preferences' },
+    { label: 'Preferred cities set',        done: (p.target_locations || []).length > 0,   to: '/settings?tab=preferences' },
+    { label: 'Salary expectation set',      done: !!p.salary_min_bdt,                      to: '/settings?tab=preferences' },
+    { label: 'Phone number added',          done: !!p.phone,                               to: '/settings' },
+    { label: 'A CV tailored to a job',      done: (rw?.rewrites || []).some((r) => r.job_id), to: '/jobs' },
+    { label: 'First application tracked',   done: (apps?.stats?.applied || 0) > 0,         to: '/jobs' },
+  ];
+  const done = items.filter((i) => i.done).length;
+  const pct = Math.round((done / items.length) * 100);
+
+  return (
+    <Card>
+      <CardHeader icon={Gauge} title="Profile strength" />
+      <div className="flex items-center gap-3 mb-3">
+        <div className="flex-1 h-2 rounded-full bg-fg/8 overflow-hidden">
+          <div className={`h-full rounded-full ${pct >= 75 ? 'bg-success' : pct >= 50 ? 'bg-warning' : 'bg-danger'}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-text-primary text-sm font-bold">{pct}%</span>
+      </div>
+      <p className="text-text-muted text-xs mb-2">A complete profile gets you better-matched jobs.</p>
+      <ul className="space-y-0.5">
+        {items.map((it) => (
+          <li key={it.label}>
+            <button onClick={() => !it.done && navigate(it.to)} disabled={it.done}
+              className={`w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${it.done ? 'cursor-default' : 'hover:bg-fg/5'}`}>
+              {it.done
+                ? <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+                : <Circle className="w-4 h-4 text-text-muted shrink-0" />}
+              <span className={it.done ? 'text-text-muted line-through' : 'text-text-primary'}>{it.label}</span>
+              {!it.done && <ArrowRight className="w-3 h-3 text-text-muted ml-auto" />}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+};
+
 // ── Page ──────────────────────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -449,7 +559,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="max-w-7xl 2xl:max-w-[1680px] mx-auto px-4 md:px-6 py-6">
+    <div className="w-full px-4 md:px-6 py-6">
      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_23rem] items-start">
      <div className="space-y-5 min-w-0">
       {/* Greeting + what needs attention */}
@@ -504,6 +614,7 @@ export default function Dashboard() {
         <WeekTodoCard navigate={navigate} hasCV={hasCV} onOpenJob={openDrawer} />
         <ClosingSoonCard onOpen={openDrawer} />
         <CertificationsMiniCard navigate={navigate} />
+        <ProfileStrengthCard navigate={navigate} hasCV={hasCV} />
       </aside>
      </div>
 

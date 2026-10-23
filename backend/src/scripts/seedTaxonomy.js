@@ -123,7 +123,7 @@ const batchInsert = async (table, column, values, extra = {}) => {
 
 const clean = (s) => s.replace(/\s+/g, ' ').trim();
 
-const run = async () => {
+export const seedTaxonomy = async () => {
   console.log('🌍 Seeding global taxonomy from O*NET (US Dept of Labor open data)…\n');
 
   // 1. Technology skills (~30k rows → unique tools)
@@ -206,8 +206,11 @@ const run = async () => {
       (SELECT COUNT(*) FROM taxonomy_certifications) AS certs
   `);
   console.log('\n📊 Taxonomy totals:', totals.rows[0]);
-  console.log('✅ Done. Restart backend to load taxonomy into memory.');
-  await pool.end();
+  console.log('✅ Taxonomy seeded.');
 };
 
-run().catch((err) => { console.error('❌ Seed failed:', err.message); process.exit(1); });
+// Run directly with `npm run seed:taxonomy` — the backend also runs this
+// automatically at startup when needed (see services/setupService.js)
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  seedTaxonomy().then(() => pool.end()).catch((err) => { console.error('❌ Seed failed:', err.message); process.exit(1); });
+}

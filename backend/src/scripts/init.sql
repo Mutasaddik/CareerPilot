@@ -158,6 +158,31 @@ CREATE TABLE IF NOT EXISTS salary_benchmarks (
 
 CREATE INDEX IF NOT EXISTS idx_salary_benchmarks_role ON salary_benchmarks(role_family, experience_level);
 
+-- ── Taxonomy (O*NET skills/titles + curated role tracks) ─────────
+-- Filled automatically by the backend at startup (services/setupService.js)
+CREATE TABLE IF NOT EXISTS taxonomy_skills (
+  id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL UNIQUE, category VARCHAR(100),
+  aliases TEXT[] DEFAULT '{}', source VARCHAR(50) DEFAULT 'onet', created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tax_skills_name ON taxonomy_skills (LOWER(name));
+CREATE TABLE IF NOT EXISTS taxonomy_job_titles (
+  id SERIAL PRIMARY KEY, title VARCHAR(250) NOT NULL UNIQUE, onet_code VARCHAR(20),
+  source VARCHAR(50) DEFAULT 'onet', created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tax_titles_title ON taxonomy_job_titles (LOWER(title));
+CREATE TABLE IF NOT EXISTS taxonomy_certifications (
+  id SERIAL PRIMARY KEY, name VARCHAR(250) NOT NULL UNIQUE, field VARCHAR(100),
+  aliases TEXT[] DEFAULT '{}', source VARCHAR(50) DEFAULT 'curated', created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS taxonomy_role_skills (
+  id SERIAL PRIMARY KEY, onet_code VARCHAR(20) NOT NULL, skill VARCHAR(200) NOT NULL, UNIQUE (onet_code, skill)
+);
+CREATE INDEX IF NOT EXISTS idx_role_skills_code ON taxonomy_role_skills (onet_code);
+CREATE TABLE IF NOT EXISTS taxonomy_role_keywords (
+  id SERIAL PRIMARY KEY, role_name VARCHAR(100) NOT NULL UNIQUE, title_synonyms TEXT[] NOT NULL,
+  keywords TEXT[] NOT NULL, tools TEXT[] NOT NULL, source VARCHAR(50) DEFAULT 'curated', created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ── Occupations (O*NET) and their classification on jobs/users ──
 -- ~1,000 occupations; every job is classified once into one of them (or a
 -- curated Bangladesh track) so matching works for any profession.

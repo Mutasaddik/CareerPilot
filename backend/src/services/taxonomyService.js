@@ -379,7 +379,8 @@ const occupationName = (title) => {
   const [first] = head.split(/ and /i);
   if (first !== head && /[^s]s$/i.test(first.trim())) head = first.trim(); // "Accountants and Auditors" → "Accountants"
   return head.replace(/(\w+)$/, (w) => (
-    /ives$/i.test(w) ? w.slice(0, -3) + 'fe'          // Midwives → Midwife
+    /^sales$/i.test(w) ? w                              // "Sales" is not a plural
+      : /(wi|kni|li)ves$/i.test(w) ? w.slice(0, -3) + 'fe' // Midwives → Midwife (Representatives stays regular)
       : /ies$/i.test(w) ? w.slice(0, -3) + 'y'        // Secretaries → Secretary
       : /(ss|us)$/i.test(w) ? w : w.replace(/s$/i, '')
   ));

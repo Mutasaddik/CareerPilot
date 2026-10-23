@@ -270,7 +270,7 @@ export default function Jobs() {
 
       {/* Topbar */}
       <div className="sticky top-0 z-30 bg-bg-primary/80 backdrop-blur-xl border-b border-fg/8 px-6 py-4">
-        <div className="flex items-center gap-4 max-w-7xl mx-auto">
+        <div className="flex items-center gap-4 w-full">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
             <input
@@ -330,7 +330,7 @@ export default function Jobs() {
       </div>
 
       {/* Main content */}
-      <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className="w-full px-4 md:px-6 py-6">
         <StatsBar stats={statsData?.stats} minScore={minScore} onFilter={setMinScore} />
 
         {!isLoading && jobs.length > 0 && (
